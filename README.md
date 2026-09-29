@@ -67,23 +67,33 @@ Autonomy software stack for the SAEISS Autonomous Drone Development Challenge (A
 
 ## Setup on Ubuntu Laptop (Testing & Simulation)
 
-### 1. Prerequisites (ROS 2 Humble & Dependencies)
+### Supported Environments
+- **Ubuntu 24.04 LTS**: Native **ROS 2 Jazzy Jalisco** + **Gazebo Harmonic**
+- **Ubuntu 22.04 LTS**: Native **ROS 2 Humble Hawksbill** + **Gazebo Garden/Fortress**
+
+### 1. Prerequisites (ROS 2 Jazzy on Ubuntu 24.04)
 ```bash
 sudo apt update
 sudo apt install -y \
-    ros-humble-desktop \
-    ros-humble-mavros \
-    ros-humble-mavros-msgs \
-    ros-humble-cv-bridge \
+    ros-jazzy-desktop \
+    ros-jazzy-mavros \
+    ros-jazzy-mavros-msgs \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-ros-gz \
     python3-colcon-common-extensions \
-    python3-pip
+    python3-pip \
+    python3-opencv \
+    python3-numpy \
+    python3-shapely
 
 # Install geographic datasets required by MAVROS
-sudo /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
+sudo /opt/ros/jazzy/lib/mavros/install_geographiclib_datasets.sh
 
-# Python dependencies
-pip3 install opencv-python numpy shapely fastapi uvicorn requests
+# Install Python HMI and networking utilities
+sudo apt install -y python3-fastapi python3-uvicorn python3-requests
 ```
+
+*(Note for Ubuntu 22.04: Replace `jazzy` with `humble` in the package names above).*
 
 ### 2. Clone and Build
 ```bash
