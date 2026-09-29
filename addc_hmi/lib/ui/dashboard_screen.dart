@@ -143,7 +143,7 @@ class _SectorButton extends StatelessWidget {
           side: const BorderSide(color: Colors.cyanAccent),
         ),
       ),
-      onTap: onTap,
+      onPressed: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
