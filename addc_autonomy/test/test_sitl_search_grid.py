@@ -76,15 +76,8 @@ class TestSearchPlannerLogic(unittest.TestCase):
         for x, y, _ in wps:
             self.assertFalse(self._is_point_in_tree(x, y), f"Waypoint ({x}, {y}) violates tree buffer zone!")
 
-    def test_03_roi_stack_preemption_and_resumption(self):
-        """Simulate runner ROI trigger mid-flight, stack stashing, and resumption on empty ROI."""
-        global_wps = self._generate_boustrophedon(self.x_min, self.x_max, self.y_min, self.y_max, self.spacing, self.altitude)
-        current_idx = 4  # Drone was at waypoint 4 when runner submitted ROI
-
-        # Preemption trigger
-        resume_stack = []
-        resume_stack.append((list(global_wps), current_idx))
-
+    def test_03_roi_expansion_exhaustion(self):
+        """Simulate runner ROI trigger mid-flight, and subsequent outward expansion on exhaustion."""
         # Runner specifies ROI [12.0, 16.0, 0.0, 4.0]
         roi_x_min, roi_x_max, roi_y_min, roi_y_max = 12.0, 16.0, 0.0, 4.0
         roi_wps = self._generate_boustrophedon(roi_x_min, roi_x_max, roi_y_min, roi_y_max, 1.0, self.altitude)
@@ -97,11 +90,21 @@ class TestSearchPlannerLogic(unittest.TestCase):
             self.assertGreaterEqual(y, roi_y_min - 1e-4)
             self.assertLessEqual(y, roi_y_max + 1e-4)
 
-        # Simulate ROI exhausted without spotting target -> pop stack
-        restored_wps, restored_idx = resume_stack.pop()
-        self.assertEqual(restored_idx, 4)
-        self.assertEqual(len(restored_wps), len(global_wps))
-        self.assertEqual(restored_wps[restored_idx], global_wps[4])
+        # Simulate ROI exhausted without spotting target -> expand outward by lane_spacing (2.0)
+        expansion = 2.0
+        new_x_min = max(self.x_min, roi_x_min - expansion)
+        new_x_max = min(self.x_max, roi_x_max + expansion)
+        new_y_min = max(self.y_min, roi_y_min - expansion)
+        new_y_max = min(self.y_max, roi_y_max + expansion)
+
+        self.assertEqual(new_x_min, 10.0) # 12.0 - 2.0
+        self.assertEqual(new_x_max, 18.0) # 16.0 + 2.0
+        self.assertEqual(new_y_min, -2.0) # 0.0 - 2.0
+        self.assertEqual(new_y_max, 6.0)  # 4.0 + 2.0 (clamped to y_max=6.0)
+
+        # Generate new expanded boustrophedon
+        expanded_wps = self._generate_boustrophedon(new_x_min, new_x_max, new_y_min, new_y_max, 1.0, self.altitude)
+        self.assertGreater(len(expanded_wps), len(roi_wps))
 
     def test_04_roi_boundary_clamping(self):
         """Ensure an out-of-bounds ROI requested by human is clamped safely to geofence."""
