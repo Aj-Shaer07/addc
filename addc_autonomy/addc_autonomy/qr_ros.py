@@ -23,6 +23,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Point
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
+from std_srvs.srv import Trigger
 
 try:
     from cv_bridge import CvBridge
@@ -60,6 +61,9 @@ class QRVisionNode(Node):
         # Target Offset: X = Error_X (-1.0 to 1.0), Y = Error_Y (-1.0 to 1.0), Z = Lock Status (1.0 = locked, 0.0 = lost)
         self.target_offset_pub = self.create_publisher(Point, '/addc/vision/target_offset', 10)
         self.decoded_digits_pub = self.create_publisher(String, '/addc/vision/decoded_digits', 10)
+
+        # ROS 2 Services
+        self.release_cam_srv = self.create_service(Trigger, '/addc/vision/release_camera', self._release_camera_cb)
 
         # Core Detection & Decode Engine (Identical to QR_Motion_Final.py)
         self.qr = cv2.QRCodeDetector()
@@ -103,6 +107,26 @@ class QRVisionNode(Node):
         self.processing_timer = self.create_timer(timer_period, self._process_frame_loop)
 
         self.get_logger().info("[Vision] QRVisionNode initialized successfully.")
+
+    def _release_camera_cb(self, request, response):
+        self.get_logger().info("[Vision] Received orchestrator request to release hardware camera for handoff.")
+        self.is_running = False
+        if hasattr(self, 'camera') and self.camera is not None:
+            try:
+                self.camera.stop()
+                self.camera = None
+                response.success = True
+                response.message = "Picamera2 released for precision landing handoff."
+                self.get_logger().info(f"[Vision] {response.message}")
+            except Exception as e:
+                response.success = False
+                response.message = f"Failed to release camera: {e}"
+                self.get_logger().error(f"[Vision] {response.message}")
+        else:
+            response.success = True
+            response.message = "Camera already released or running in SITL/passive mode."
+            self.get_logger().info(f"[Vision] {response.message}")
+        return response
 
     def _init_picamera2(self):
         if not PICAMERA2_AVAILABLE:

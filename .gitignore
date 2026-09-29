@@ -18,3 +18,8 @@ Thumbs.db
 venv/
 .venv/
 env/
+
+# Ignore reference materials and legacy code
+*.pdf
+initial_codes/
+
