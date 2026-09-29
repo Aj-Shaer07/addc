@@ -37,13 +37,13 @@ flutter pub get
 
 You can test the app on your computer using a simulator or your web browser before deploying it to a phone.
 
-1. **Start the Mock/Local Backend (Optional but recommended):**
-   To test the app, you can run the ROS 2 node locally on your laptop:
+1. **Start the Mock Backend (No ROS required):**
+   To test the app's UI without needing a full ROS 2 installation on your laptop, you can run the provided mock server:
    ```bash
-   cd ../addc_autonomy
-   python3 addc_autonomy/hmi_bridge_node.py
+   cd addc_hmi
+   python3 mock_server.py
    ```
-   *(This will start the HTTP server on port 5000).*
+   *(This will start a dummy HTTP server on port 5000 that mimics the drone).*
 
 2. **Run the Flutter App:**
    ```bash
