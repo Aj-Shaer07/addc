@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="intelligence_cache">
+    <static>true</static>
+    <link name="cache_link">
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.35 0.35 0.25</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="visual_box">
+        <geometry>
+          <box>
+            <size>0.35 0.35 0.25</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.9 0.9 0.9 1.0</ambient>
+          <diffuse>0.95 0.95 0.95 1.0</diffuse>
+        </material>
+      </visual>
+      <visual name="visual_qr_surface">
+        <pose>0 0 0.126 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.28 0.28 0.002</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.0 0.0 0.0 1.0</ambient>
+          <diffuse>0.05 0.05 0.05 1.0</diffuse>
+        </material>
+      </visual>
+      <visual name="visual_qr_inner_square">
+        <pose>0 0 0.128 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.22 0.22 0.002</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1.0 1.0 1.0 1.0</ambient>
+          <diffuse>1.0 1.0 1.0 1.0</diffuse>
+        </material>
+      </visual>
+      <visual name="visual_qr_center_dot">
+        <pose>0 0 0.130 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.10 0.10 0.002</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.0 0.0 0.0 1.0</ambient>
+          <diffuse>0.0 0.0 0.0 1.0</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

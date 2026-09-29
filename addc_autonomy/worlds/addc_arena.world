@@ -1,0 +1,96 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="addc_arena">
+    <!-- Sun Lighting -->
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <!-- Ground Plane -->
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <!-- Physics Configuration for ArduPilot SITL -->
+    <physics type="ode">
+      <max_step_size>0.0025</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>400</real_time_update_rate>
+      <gravity>0 0 -9.8066</gravity>
+    </physics>
+
+    <!-- Elevated Landing Pad at Origin (0, 0, 0) -->
+    <include>
+      <name>home_landing_pad</name>
+      <uri>model://landing_pad</uri>
+      <pose>0 0 0.075 0 0 0</pose>
+    </include>
+
+    <!-- Intelligence Cache with QR Target at (14.0, 3.0, 0) -->
+    <include>
+      <name>intelligence_cache_box</name>
+      <uri>model://intelligence_cache</uri>
+      <pose>14.0 3.0 0.125 0 0 0</pose>
+    </include>
+
+    <!-- Tree Obstacle 1 at (11.0, 1.0, 0) -->
+    <include>
+      <name>tree_obstacle_1</name>
+      <uri>model://tree_obstacle</uri>
+      <pose>11.0 1.0 0 0 0 0</pose>
+    </include>
+
+    <!-- Tree Obstacle 2 at (17.0, -2.5, 0) -->
+    <include>
+      <name>tree_obstacle_2</name>
+      <uri>model://tree_obstacle</uri>
+      <pose>17.0 -2.5 0 0 0 0</pose>
+    </include>
+
+    <!-- Arena Boundary Markers (Visual only) -->
+    <!-- Recon Area: X from 8.0 to 20.0, Y from -6.0 to 6.0 -->
+    <model name="arena_marker_corner_1">
+      <static>true</static>
+      <pose>8.0 -6.0 0.25 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1</radius><length>0.5</length></cylinder></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="arena_marker_corner_2">
+      <static>true</static>
+      <pose>20.0 -6.0 0.25 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1</radius><length>0.5</length></cylinder></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="arena_marker_corner_3">
+      <static>true</static>
+      <pose>20.0 6.0 0.25 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1</radius><length>0.5</length></cylinder></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="arena_marker_corner_4">
+      <static>true</static>
+      <pose>8.0 6.0 0.25 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.1</radius><length>0.5</length></cylinder></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
