@@ -72,9 +72,9 @@ class QRVisionNode(Node):
         self.qr = cv2.QRCodeDetector()
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-        inv_gamma = 1.0 / 0.3
+        gamma = 2.5
         self.gamma_lut = np.array(
-            [((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]
+            [((i / 255.0) ** gamma) * 255 for i in np.arange(0, 256)]
         ).astype("uint8")
 
         # Regex for 2-digit numeric code
@@ -213,10 +213,17 @@ class QRVisionNode(Node):
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Single-pass point detection
-        retval, points = self.qr.detect(gray)
-        if not retval or points is None or len(points) == 0:
+        # Pyramid Detection: Shrink image by 60% to drastically speed up finding the QR code
+        scale = 0.6
+        small_gray = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+
+        # Single-pass point detection on the faster, smaller image
+        retval, small_points = self.qr.detect(small_gray)
+        if not retval or small_points is None or len(small_points) == 0:
             return None, None, 0.0, 0.0
+
+        # Scale the bounding box points back up to the HD frame for decoding!
+        points = small_points / scale
 
         # Calculate True Normalized Centroid Error (-1.0 to 1.0)
         pts_reshaped = points.reshape(-1, 2)
@@ -238,23 +245,39 @@ class QRVisionNode(Node):
         if extracted:
             return extracted, points, error_x, error_y
 
-        # Attempt 2: CLAHE Enhanced
+        # Attempt 2: Screen Moiré Reduction (Crucial for Laptop Screens)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        data, _ = self.qr.decode(blurred, points)
+        extracted = self._extract_digits(data)
+        if extracted:
+            return extracted, points, error_x, error_y
+
+        # Attempt 3: Adaptive Thresholding (Handles glowing screen in dark room)
+        adaptive = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+        data, _ = self.qr.decode(adaptive, points)
+        extracted = self._extract_digits(data)
+        if extracted:
+            return extracted, points, error_x, error_y
+
+        # Attempt 4: Screen Glare Darkening (Gamma 2.5)
+        darkened = cv2.LUT(gray, self.gamma_lut)
+        data, _ = self.qr.decode(darkened, points)
+        extracted = self._extract_digits(data)
+        if extracted:
+            return extracted, points, error_x, error_y
+
+        # Attempt 5: CLAHE Enhanced
         enhanced = self.clahe.apply(gray)
         data, _ = self.qr.decode(enhanced, points)
         extracted = self._extract_digits(data)
         if extracted:
             return extracted, points, error_x, error_y
 
-        # Attempt 3: Otsu Thresholding
+        # Attempt 6: Otsu Thresholding
         _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         data, _ = self.qr.decode(binary, points)
-        extracted = self._extract_digits(data)
-        if extracted:
-            return extracted, points, error_x, error_y
-
-        # Attempt 4: Gamma LUT Darkening (extreme glare fallback)
-        darkened = cv2.LUT(gray, self.gamma_lut)
-        data, _ = self.qr.decode(darkened, points)
         extracted = self._extract_digits(data)
         if extracted:
             return extracted, points, error_x, error_y

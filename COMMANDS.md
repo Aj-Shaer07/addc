@@ -6,7 +6,7 @@ This document lists all commands to build, simulate, test, and run the ADDC auto
 
 ## 1. System Setup & Dependencies
 
-### Ubuntu 24.04 LTS (ROS 2 Jazzy)
+### Ubuntu 24.04 LTS (ROS 2 Jazzy) - Laptop & Raspberry Pi
 ```bash
 sudo apt update
 sudo apt install -y \
@@ -29,11 +29,19 @@ sudo /opt/ros/jazzy/lib/mavros/install_geographiclib_datasets.sh
 
 # Python MAVLink dependency for GCS script
 pip install pymavlink
+
+# Source ROS 2 Jazzy globally
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+source ~/.bashrc
 ```
 
-### Ubuntu 22.04 LTS (ROS 2 Humble / Raspberry Pi)
+---
+
+## 2. Workspace Build Commands
+
 ```bash
-sudo apt update
+# Navigate to your colcon workspace (e.g. ~/ros2_ws)
+cd ~/ros2_wssudo apt update
 sudo apt install -y \
     ros-humble-desktop \
     ros-humble-mavros \
@@ -48,20 +56,6 @@ sudo apt install -y \
     python3-uvicorn \
     python3-requests
 
-# Geographic datasets required by MAVROS
-sudo /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
-
-# Python MAVLink dependency for GCS script
-pip install pymavlink
-```
-
----
-
-## 2. Workspace Build Commands
-
-```bash
-# Navigate to your colcon workspace (e.g. ~/ros2_ws)
-cd ~/ros2_ws
 
 # Build the autonomy package
 colcon build --symlink-install --packages-select addc_autonomy
@@ -72,7 +66,83 @@ source install/setup.bash
 
 ---
 
-## 3. Full Pipeline Launch Commands (Gazebo SITL)
+## 3. Automated Test Execution
+
+### A. Direct Python Unit Tests (SITL / Zero Overhead)
+Run these anywhere without running ROS 2 daemons or Gazebo:
+```bash
+# Vision detection, 4-tier cascade & centroid error test
+python3 src/addc/addc_autonomy/test/test_sitl_qr_vision.py
+
+# Path planner, boundary containment & tree obstacle avoidance test
+python3 src/addc/addc_autonomy/test/test_sitl_search_grid.py
+
+# HMI REST portal & runner ROI preemption test
+python3 src/addc/addc_autonomy/test/test_sitl_roi_preemption.py
+
+# Precision Landing state machine and fallback logic test
+python3 src/addc/addc_autonomy/test/test_sitl_precision_landing.py
+
+# Mission Control Orchestrator state machine test
+python3 src/addc/addc_autonomy/test/test_sitl_mission_control.py
+```
+
+### B. Hardware-In-The-Loop (HITL) Physical Raspberry Pi Tests
+Run these strictly on the physical Raspberry Pi while it is connected to the Pixhawk and Arducam.
+
+**1. Vision & Arducam Test**
+*(Verifies OpenCV detects the physical QR code through the IMX296 sensor)*
+```bash
+# Terminal 1: Start the camera driver with GUI
+ros2 run addc_autonomy qr_ros --ros-args -p use_sim_time:=false -p enable_debug_window:=true
+
+# Terminal 2: Run the test
+python3 src/addc/addc_autonomy/test/test_rpi_camera.py
+```
+
+**2. UART Telemetry / Pixhawk Test**
+*(Verifies the Pi is receiving MAVLink heartbeats & IMU on `/dev/ttyAMA0`)*
+```bash
+# Terminal 1: Start MAVROS
+ros2 launch mavros apm.launch fcu_url:=/dev/ttyAMA0:921600
+
+# Terminal 2: Run the test
+python3 src/addc/addc_autonomy/test/test_rpi_telemetry.py
+```
+
+**3. Precision Landing / Visual Servoing Test**
+*(Verifies the Canny Edge detector locks onto the physical pad and outputs `cmd_vel`)*
+```bash
+# Terminal 1: Start the landing node with camera
+ros2 run addc_autonomy precision_landing --ros-args -p use_sim_time:=false -p enable_debug_window:=true
+
+# Terminal 2: Run the test
+python3 src/addc/addc_autonomy/test/test_rpi_precision_landing.py
+```
+
+**4. Ground-to-Air Telemetry Mission Ingestion Test**
+*(Verifies the Pi downloads the mission sent from your laptop)*
+```bash
+# Terminal 1: Start the search node
+ros2 run addc_autonomy search_node --ros-args -p use_sim_time:=false
+
+# Terminal 2: Run the test
+python3 src/addc/addc_autonomy/test/test_rpi_search_ingestion.py
+```
+
+**5. Tailscale & Flutter HMI Test**
+*(Verifies the Android App can hit the Pi over the mesh VPN)*
+```bash
+# Terminal 1: Start the HMI Bridge
+ros2 run addc_autonomy hmi_bridge
+
+# Terminal 2: Run the test
+python3 src/addc/addc_autonomy/test/test_rpi_hmi_roi.py
+```
+
+---
+
+## 4. Full Pipeline Launch Commands (Gazebo SITL)
 
 To run the full autonomous mission in Gazebo SITL with ArduPilot, open **6 separate terminals**:
 
@@ -120,7 +190,7 @@ ros2 run rqt_image_view rqt_image_view
 
 ---
 
-## 4. Physical Flight Bringup (Raspberry Pi + Pixhawk)
+## 5. Physical Flight Bringup (Raspberry Pi + Pixhawk)
 
 ### Step 1: On the Ground Control Station (Laptop)
 1. Draw your flight boundary in Mission Planner and save the `.poly` file.
@@ -140,7 +210,7 @@ ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false
 
 ---
 
-## 5. MAVROS Communication Diagnostic Commands
+## 6. MAVROS Communication Diagnostic Commands
 
 Check if Pixhawk and telemetry links are communicating properly:
 ```bash
