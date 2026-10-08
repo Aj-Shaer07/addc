@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:addc_hmi/main.dart';
@@ -20,6 +19,6 @@ void main() {
     expect(find.text('Tailscale IP:Port'), findsOneWidget);
     
     // Verify that the connect button is present
-    expect(find.text('Connect to UAV'), findsOneWidget);
+    expect(find.text('INITIALIZE CONNECTION'), findsOneWidget);
   });
 }

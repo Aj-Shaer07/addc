@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -9,7 +9,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     enable_gui_arg = DeclareLaunchArgument(
         'enable_gui',
-        default_value='true',
+        default_value='false',
         description='Enable OpenCV HUD preview window'
     )
     
@@ -17,6 +17,46 @@ def generate_launch_description():
         'search_altitude',
         default_value='3.0',
         description='Search altitude in meters'
+    )
+
+    # MAVROS: Bridge between ArduPilot SITL (MAVLink) and ROS 2
+    mavros_node = Node(
+        package='mavros',
+        executable='mavros_node',
+        name='mavros',
+        output='screen',
+        parameters=[{
+            'fcu_url': 'tcp://127.0.0.1:5762',
+            'gcs_url': '',
+            'target_system_id': 1,
+            'target_component_id': 1,
+            'fcu_protocol': 'v2.0',
+            'use_sim_time': True,
+        }]
+    )
+
+    gz_camera_bridge_node = Node(
+        package='ros_gz_image',
+        executable='image_bridge',
+        name='gz_camera_bridge',
+        output='screen',
+        arguments=['/camera']
+    )
+    
+    gz_clock_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='gz_clock_bridge',
+        output='screen',
+        arguments=[
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+        ],
+        remappings=[
+            ('/camera', '/camera/image_raw'),
+        ],
+        parameters=[{
+            'use_sim_time': True,
+        }]
     )
 
     qr_vision_node = Node(
@@ -27,7 +67,7 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': True,
             'enable_debug_window': LaunchConfiguration('enable_gui'),
-            'camera_topic': '/camera/image_raw'
+            'camera_topic': '/camera'
         }]
     )
 
@@ -81,11 +121,17 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        # Force X11/XWayland backend for OpenCV Qt window to prevent Wayland freezes/font errors
+        SetEnvironmentVariable('QT_QPA_PLATFORM', 'xcb'),
         enable_gui_arg,
         arena_config_arg,
+        mavros_node,
+        gz_camera_bridge_node,
+        gz_clock_bridge_node,
         qr_vision_node,
         search_planner_node,
         mission_control_node,
         precision_landing_node,
         hmi_bridge_node,
     ])
+

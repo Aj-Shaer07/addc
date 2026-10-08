@@ -6,15 +6,19 @@ Verifies the Fallback logic: Spiral Search, Washout Lock, and Blind GPS Landing.
 
 import unittest
 from unittest.mock import MagicMock, patch
+import rclpy
 from addc_autonomy.precision_landing_node import PrecisionLandingNode
 
 class TestPrecisionLandingLogic(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        rclpy.init()
+
+    @classmethod
+    def tearDownClass(cls):
+        rclpy.shutdown()
+
     def setUp(self):
-        # Mock rclpy init to avoid actually spinning up ROS 2
-        patcher = patch('rclpy.init')
-        self.mock_init = patcher.start()
-        self.addCleanup(patcher.stop)
-        
         patcher2 = patch('rclpy.node.Node.create_publisher')
         self.mock_pub = patcher2.start()
         self.addCleanup(patcher2.stop)
@@ -37,8 +41,15 @@ class TestPrecisionLandingLogic(unittest.TestCase):
         
         patcher7 = patch('rclpy.node.Node.get_parameter')
         mock_get_param = patcher7.start()
-        # Mock parameter values
-        mock_get_param.return_value.value = 0.5 # For washout_threshold
+        from rclpy.parameter import Parameter
+        def side_effect_get_param(name):
+            if name in ['use_sim_time', 'start_type_description_service']:
+                return Parameter(name, Parameter.Type.BOOL, False)
+            elif name == 'camera_topic':
+                return Parameter(name, Parameter.Type.STRING, '/camera/image_raw')
+            else:
+                return Parameter(name, Parameter.Type.DOUBLE, 0.5)
+        mock_get_param.side_effect = side_effect_get_param
         
         self.addCleanup(patcher7.stop)
 

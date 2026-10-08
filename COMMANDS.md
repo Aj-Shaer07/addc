@@ -26,6 +26,9 @@ sudo apt install -y \
 
 # Geographic datasets required by MAVROS
 sudo /opt/ros/jazzy/lib/mavros/install_geographiclib_datasets.sh
+
+# Python MAVLink dependency for GCS script
+pip install pymavlink
 ```
 
 ### Ubuntu 22.04 LTS (ROS 2 Humble / Raspberry Pi)
@@ -47,6 +50,9 @@ sudo apt install -y \
 
 # Geographic datasets required by MAVROS
 sudo /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
+
+# Python MAVLink dependency for GCS script
+pip install pymavlink
 ```
 
 ---
@@ -66,107 +72,75 @@ source install/setup.bash
 
 ---
 
-## 3. Automated Test Execution
+## 3. Full Pipeline Launch Commands (Gazebo SITL)
 
-### Direct Python Unit Tests (Zero Sim/Robot Overhead)
-Run these anywhere without running ROS 2 daemons or Gazebo:
+To run the full autonomous mission in Gazebo SITL with ArduPilot, open **6 separate terminals**:
+
+**Terminal 1: Start Gazebo Simulator**
 ```bash
-# Vision detection, 4-tier cascade & centroid error test
-python3 src/addc/addc_autonomy/test/test_sitl_qr_vision.py
-
-# Path planner, boundary containment & tree obstacle avoidance test
-python3 src/addc/addc_autonomy/test/test_sitl_search_grid.py
-
-# HMI REST portal & runner ROI preemption test
-python3 src/addc/addc_autonomy/test/test_sitl_roi_preemption.py
-```
-
-### Via Colcon Test Runner
-```bash
-colcon test --packages-select addc_autonomy
-colcon test-result --all --verbose
-```
-
----
-
-## 4. Standalone Node Execution (CLI Commands)
-
-### A. Vision Node (`qr_ros`)
-* **In Gazebo Simulation (subscribes to `/camera/image_raw`):**
-  ```bash
-  ros2 run addc_autonomy qr_ros --ros-args -p use_sim_time:=true -p enable_debug_window:=true
-  ```
-* **On Physical Raspberry Pi (opens `Picamera2` directly):**
-  ```bash
-  # Headless flight (No GUI, zero crashes, maximum CPU savings)
-  ros2 run addc_autonomy qr_ros --ros-args -p use_sim_time:=false -p enable_debug_window:=false
-
-  # Ground testing with RealVNC display enabled:
-  ros2 run addc_autonomy qr_ros --ros-args -p use_sim_time:=false -p enable_debug_window:=true
-  ```
-
-### B. Search Node (`search_node`)
-* **In Simulation:**
-  ```bash
-  ros2 run addc_autonomy search_node --ros-args -p use_sim_time:=true -p search_altitude:=3.0 -p lane_spacing:=2.0
-  ```
-* **On Physical Raspberry Pi:**
-  ```bash
-  ros2 run addc_autonomy search_node --ros-args -p use_sim_time:=false -p search_altitude:=3.0 -p lane_spacing:=2.0
-  ```
-
-### C. Master Orchestrator (`mission_control`)
-* **In Simulation:**
-  ```bash
-  ros2 run addc_autonomy mission_control --ros-args -p use_sim_time:=true
-  ```
-* **On Physical Raspberry Pi:**
-  ```bash
-  ros2 run addc_autonomy mission_control --ros-args -p use_sim_time:=false
-  ```
-
-### D. Precision Landing Node (`precision_landing`)
-* **In Simulation:**
-  ```bash
-  ros2 run addc_autonomy precision_landing --ros-args -p use_sim_time:=true
-  ```
-* **On Physical Raspberry Pi:**
-  ```bash
-  ros2 run addc_autonomy precision_landing --ros-args -p use_sim_time:=false
-  ```
-
-### E. HMI Bridge Node (`hmi_bridge`)
-* **Starts the Runner Phone Web Portal on port 5000:**
-  ```bash
-  ros2 run addc_autonomy hmi_bridge --ros-args -p http_port:=5000
-  ```
-  *(Access via runner smartphone browser: `http://<tailscale-ip>:5000`)*
-
----
-
-## 5. Full Pipeline Launch Commands
-
-### Simulation Full Launch (Gazebo SITL)
-```bash
-# 1. Start Gazebo with ADDC Arena world
-export GAZEBO_MODEL_PATH=$GAZEBO_MODEL_PATH:~/ros2_ws/src/addc/addc_autonomy/models
-gazebo --verbose ~/ros2_ws/src/addc/addc_autonomy/worlds/addc_arena.world
-
-# 2. In another terminal, launch all autonomy nodes together
 source ~/ros2_ws/install/setup.bash
-ros2 launch addc_autonomy sim_mission.launch.py enable_gui:=true search_altitude:=3.0
+export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$HOME/ros2_ws/src/ardupilot_gazebo/models:$HOME/ros2_ws/src/addc/addc_autonomy/models
+gz sim -r -v 4 ~/ros2_ws/src/addc/addc_autonomy/worlds/addc_arena.world
+```
+*(Leave this running. It hosts the 3D physics and camera).*
+
+**Terminal 2: Start ArduPilot SITL**
+```bash
+cd ~/ros2_ws/src/addc
+./launch_ardupilot_sitl.sh
+```
+*(Connects the Pixhawk firmware to Gazebo).*
+
+**Terminal 3: Ground Control Station (GCS) - Generate & Upload Mission**
+```bash
+cd ~/ros2_ws/src/addc
+python3 search_area_setup.py
+```
+*(A GUI will open. Enter your telemetry connection string (e.g., `tcp:127.0.0.1:5760` for SITL), load your Mission Planner `.poly` boundary, and click "Generate & Upload". This dynamically calculates the optimal FOV-based lawnmower grid and injects it into the Pixhawk).*
+
+**Terminal 4: Launch the ROS 2 Autonomy Stack**
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch addc_autonomy sim_mission.launch.py
+```
+*(Starts MAVROS, Orchestrator, Search, Vision, Landing, and HMI Bridge. It automatically detects the SITL environment, bypasses physical hardware drivers, and auto-ingests the GPS mission uploaded in Terminal 3).*
+
+**Terminal 5: Launch the Flutter HMI (Runner Dashboard)**
+```bash
+cd ~/ros2_ws/src/addc/addc_hmi
+flutter run -d web-server
 ```
 
-### Physical Flight Bringup (Raspberry Pi + Pixhawk)
+**Terminal 6: View the Drone's Live Camera Feed**
+```bash
+source ~/ros2_ws/install/setup.bash
+ros2 run rqt_image_view rqt_image_view
+```
+*(Select the base `/camera` topic from the dropdown, NOT the compressed one).*
+
+---
+
+## 4. Physical Flight Bringup (Raspberry Pi + Pixhawk)
+
+### Step 1: On the Ground Control Station (Laptop)
+1. Draw your flight boundary in Mission Planner and save the `.poly` file.
+2. Run the GCS script to generate the exact FOV footprint and upload the mission to the drone via Telemetry:
+   ```bash
+   python3 ~/ros2_ws/src/addc/search_area_setup.py
+   ```
+3. Enter your radio's COM port (e.g., `COM3,57600` for Windows or `/dev/ttyUSB0,57600` for Linux) and click Upload.
+
+### Step 2: On the Drone (Raspberry Pi SSH)
 ```bash
 # Single command launch for all flight nodes
 source ~/ros2_ws/install/setup.bash
-ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false search_altitude:=3.0
+ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false
 ```
+*(The physical launch file automatically disables `use_sim_time`, activating the physical PiCamera2 module and the Canny Edge precision landing hardware routines).*
 
 ---
 
-## 6. MAVROS Communication Diagnostic Commands
+## 5. MAVROS Communication Diagnostic Commands
 
 Check if Pixhawk and telemetry links are communicating properly:
 ```bash

@@ -22,13 +22,17 @@ class AddcHmiApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ADDC HMI',
-      theme: ThemeData.dark().copyWith(
-        primaryColor: Colors.cyanAccent,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: const ColorScheme.dark(
-          primary: Colors.cyanAccent,
-          secondary: Colors.cyan,
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primaryColor: Colors.blueAccent,
+        scaffoldBackgroundColor: const Color(0xFFF3F4F6),
+        colorScheme: const ColorScheme.light(
+          primary: Colors.blueAccent,
+          secondary: Colors.blue,
+          surface: Colors.white,
         ),
+        fontFamily: 'Roboto', // Default fallback that looks clean
       ),
       initialRoute: '/',
       routes: {

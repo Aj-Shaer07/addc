@@ -3,12 +3,12 @@
   <world name="addc_arena">
     <!-- Sun Lighting -->
     <include>
-      <uri>model://sun</uri>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
     </include>
 
     <!-- Ground Plane -->
     <include>
-      <uri>model://ground_plane</uri>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground Plane</uri>
     </include>
 
     <!-- Physics Configuration for ArduPilot SITL -->
@@ -18,6 +18,28 @@
       <real_time_update_rate>400</real_time_update_rate>
       <gravity>0 0 -9.8066</gravity>
     </physics>
+
+    <!-- Required Gazebo Sim System Plugins -->
+    <plugin filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="gz-sim-imu-system"
+      name="gz::sim::systems::Imu">
+    </plugin>
+    <plugin filename="gz-sim-navsat-system"
+      name="gz::sim::systems::NavSat">
+    </plugin>
 
     <!-- Elevated Landing Pad at Origin (0, 0, 0) -->
     <include>
@@ -33,19 +55,7 @@
       <pose>14.0 3.0 0.125 0 0 0</pose>
     </include>
 
-    <!-- Tree Obstacle 1 at (11.0, 1.0, 0) -->
-    <include>
-      <name>tree_obstacle_1</name>
-      <uri>model://tree_obstacle</uri>
-      <pose>11.0 1.0 0 0 0 0</pose>
-    </include>
 
-    <!-- Tree Obstacle 2 at (17.0, -2.5, 0) -->
-    <include>
-      <name>tree_obstacle_2</name>
-      <uri>model://tree_obstacle</uri>
-      <pose>17.0 -2.5 0 0 0 0</pose>
-    </include>
 
     <!-- Arena Boundary Markers (Visual only) -->
     <!-- Recon Area: X from 8.0 to 20.0, Y from -6.0 to 6.0 -->
@@ -92,5 +102,13 @@
         </visual>
       </link>
     </model>
+
+    <!-- The ArduPilot SITL Drone -->
+    <include>
+      <name>iris</name>
+      <uri>file:///home/aj-shaer/ros2_ws/src/ardupilot_gazebo/models/iris_with_ardupilot</uri>
+      <pose>0 0 0.25 0 0 0</pose>
+    </include>
+
   </world>
 </sdf>

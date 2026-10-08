@@ -18,6 +18,8 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Polygon
 from std_msgs.msg import Bool, Float32MultiArray
+from rclpy.qos import qos_profile_sensor_data
+from mavros_msgs.msg import WaypointList, HomePosition
 
 
 class SearchNode(Node):
@@ -32,7 +34,7 @@ class SearchNode(Node):
         self.declare_parameter('search_altitude', 3.0)
         self.declare_parameter('lane_spacing', 2.0)
         self.declare_parameter('acceptance_radius', 1.0)
-        self.declare_parameter('tree_obstacles_json', '[{"x": 11.0, "y": 1.0, "radius": 1.5}, {"x": 17.0, "y": -2.5, "radius": 1.5}]')
+        self.declare_parameter('tree_obstacles_json', '[{"x": 11.0, "y": 1.0, "radius": 2.5}, {"x": 17.0, "y": -2.5, "radius": 2.5}]')
 
         self.x_min = float(self.get_parameter('recon_x_min').value)
         self.x_max = float(self.get_parameter('recon_x_max').value)
@@ -65,7 +67,7 @@ class SearchNode(Node):
             PoseStamped,
             '/mavros/local_position/pose',
             self._local_pos_callback,
-            10
+            qos_profile_sensor_data
         )
         self.roi_sub = self.create_subscription(
             Float32MultiArray,
@@ -73,9 +75,22 @@ class SearchNode(Node):
             self._hmi_roi_callback,
             10
         )
+        self.home_sub = self.create_subscription(
+            HomePosition,
+            '/mavros/home_position/home',
+            self._home_callback,
+            qos_profile_sensor_data
+        )
+        self.mission_sub = self.create_subscription(
+            WaypointList,
+            '/mavros/mission/waypoints',
+            self._mission_callback,
+            qos_profile_sensor_data
+        )
 
         # Internal State
         self.is_active = False
+        self.home_pos = None
         self.current_pos: Optional[PoseStamped] = None
         self.waypoints: List[Tuple[float, float, float]] = []
         self.current_idx = 0
@@ -142,6 +157,38 @@ class SearchNode(Node):
         self.current_idx = 0
         self.is_in_roi_mode = False
 
+    def _home_callback(self, msg: HomePosition):
+        self.home_pos = msg.geo
+
+    def _mission_callback(self, msg: WaypointList):
+        if not self.home_pos:
+            self.get_logger().warn("[Search] Received mission but no home position yet. Waiting...")
+            return
+            
+        wps = []
+        for i, wp in enumerate(msg.waypoints):
+            # ArduPilot reserves sequence 0 for the Home Position. Skip it.
+            if i == 0:
+                continue
+                
+            if wp.command == 16:  # MAV_CMD_NAV_WAYPOINT
+                # Convert GPS to ENU
+                R = 6378137.0
+                dlat = math.radians(wp.x_lat - self.home_pos.latitude)
+                dlon = math.radians(wp.y_long - self.home_pos.longitude)
+                ref_lat_rad = math.radians(self.home_pos.latitude)
+                
+                x = dlon * R * math.cos(ref_lat_rad)
+                y = dlat * R
+                
+                # Force local altitude instead of trusting the raw MAVLink Z (which might be AMSL)
+                wps.append((x, y, self.altitude))
+                
+        if len(wps) > 0 and not self.is_in_roi_mode:
+            self.waypoints = wps
+            self.current_idx = 0
+            self.get_logger().info(f"[Search] Auto-ingested {len(wps)} dynamic global waypoints from GCS Mission upload!")
+
     def _activate_callback(self, msg: Bool):
         self.is_active = msg.data
         self.get_logger().info(f"[Search] Active state changed to: {self.is_active}")
@@ -185,10 +232,11 @@ class SearchNode(Node):
             self.get_logger().warn("[Search] Could not synthesize valid ROI waypoints due to obstacles.")
             return
 
-        # 4. Activate ROI micro-grid
+        # 4. Activate ROI micro-gridbut 
         self.waypoints = roi_waypoints
         self.current_idx = 0
         self.is_in_roi_mode = True
+        self.is_active = True
         self.get_logger().info(f"[Search] Switched to PRIORITY ROI mode with {len(self.waypoints)} micro-waypoints.")
 
         if self.is_active:
@@ -226,6 +274,7 @@ class SearchNode(Node):
             roi_spacing, self.altitude
         )
         self.current_idx = 0
+        self.is_active = True
         if self.is_active:
             self._publish_current_waypoint()
 
@@ -280,7 +329,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

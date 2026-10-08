@@ -25,6 +25,7 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from mavros_msgs.msg import State
 from sensor_msgs.msg import Image
+from rclpy.qos import qos_profile_sensor_data
 
 try:
     from cv_bridge import CvBridge
@@ -44,7 +45,8 @@ class PrecisionLandingNode(Node):
         super().__init__('precision_landing_node')
 
         # Parameters
-        self.declare_parameter('use_sim_time', False)
+        if not self.has_parameter('use_sim_time'):
+            self.declare_parameter('use_sim_time', False)
         self.declare_parameter('camera_topic', '/camera/image_raw')
         self.declare_parameter('landing_alt_threshold', 0.5) # meters (Washout lock threshold)
         self.declare_parameter('descent_speed', 0.3) # m/s
@@ -75,11 +77,11 @@ class PrecisionLandingNode(Node):
         self.in_washout_lock = False
 
         # ROS 2 Subscribers
-        self.local_pos_sub = self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._local_pos_callback, 10)
-        self.state_sub = self.create_subscription(State, '/mavros/state', self._state_callback, 10)
+        self.local_pos_sub = self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._local_pos_callback, qos_profile_sensor_data)
+        self.state_sub = self.create_subscription(State, '/mavros/state', self._state_callback, qos_profile_sensor_data)
         
         # ROS 2 Publishers
-        self.velocity_pub = self.create_publisher(TwistStamped, '/mavros/setpoint_velocity/cmd_vel', 10)
+        self.velocity_pub = self.create_publisher(TwistStamped, '/mavros/setpoint_velocity/cmd_vel', qos_profile_sensor_data)
         self.landing_cmd_pub = self.create_publisher(String, '/addc/mission/land_cmd', 10)
         self.status_pub = self.create_publisher(String, '/addc/landing/status', 10)
 
@@ -182,13 +184,81 @@ class PrecisionLandingNode(Node):
 
     def _process_vision(self) -> Tuple[bool, float, float]:
         """Simple mock visual detector for the landing pad (e.g., color threshold)."""
+        # SITL Robust Fallback: Mock the vision tracking offsets using odometry directly to the EKF local origin (0, 0)
+        if getattr(self, 'use_sim_time', False) and self.current_local_pos is not None:
+            # P-controller expects error, so distance to the launch pad (0,0 in local frame)
+            err_x = 0.0 - self.current_local_pos.x
+            err_y = 0.0 - self.current_local_pos.y
+            
+            # Normalize to [-1.0, 1.0] mimicking image pixel offset ratios
+            err_x = max(-1.0, min(1.0, err_x))
+            err_y = max(-1.0, min(1.0, err_y))
+            
+            return True, err_x, err_y
+
         with self.frame_lock:
             if self.latest_frame is None:
                 return False, 0.0, 0.0
             frame = self.latest_frame.copy()
 
-        # In a real scenario, implement cv2.inRange or cv2.aruco here
-        # Return False by default to trigger the spiral search fallback for testing
+        # Physical Hardware Vision Processing: Color-Agnostic Shape Detector
+        h, w = frame.shape[:2]
+        center_x = w / 2.0
+        center_y = h / 2.0
+
+        # Convert to Grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Apply slight blur to reduce noise
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # Canny Edge Detection (Finds sharp transitions regardless of color)
+        edges = cv2.Canny(blurred, 50, 150)
+
+        # Dilate edges to close gaps in the square's outline
+        kernel = np.ones((5,5), np.uint8)
+        closed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(closed_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        best_cnt = None
+        max_area = 0
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area > 800:  # Ignore tiny specks of white
+                # Approximate polygon to check for square-ish shapes
+                peri = cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
+                
+                # Check for 4 corners (or close to it)
+                if len(approx) >= 4:
+                    x, y, w_box, h_box = cv2.boundingRect(approx)
+                    aspect_ratio = float(w_box) / h_box
+                    
+                    # Ensure it's roughly a square and is the largest white square we see
+                    if 0.7 <= aspect_ratio <= 1.3 and area > max_area:
+                        max_area = area
+                        best_cnt = cnt
+
+        if best_cnt is not None:
+            # Calculate moments for the true centroid of the white square
+            M = cv2.moments(best_cnt)
+            if M["m00"] > 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                
+                # Normalize error from -1.0 to 1.0 based on camera center
+                err_x = (cx - center_x) / center_x
+                err_y = (cy - center_y) / center_y
+                
+                # Clamp values to prevent aggressive over-correction
+                err_x = max(-1.0, min(1.0, err_x))
+                err_y = max(-1.0, min(1.0, err_y))
+                
+                return True, err_x, err_y
+
+        # Pad not found in this physical frame
         return False, 0.0, 0.0
 
     def _trigger_blind_land(self):
@@ -296,7 +366,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

@@ -18,6 +18,9 @@ from addc_autonomy.hmi_bridge_node import HMIRequestHandler, HMI_STATE
 class TestHMIBridgeServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from unittest.mock import MagicMock
+        import addc_autonomy.hmi_bridge_node as hmi_module
+        hmi_module.HMI_NODE_REF = MagicMock()
         # Bind to dynamic local test port
         cls.test_port = 5899
         cls.server = HTTPServer(('127.0.0.1', cls.test_port), HMIRequestHandler)

@@ -9,15 +9,27 @@ HMI_STATE = {
 }
 
 class MockHMIRequestHandler(BaseHTTPRequestHandler):
+    def _send_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == '/status':
             self.send_response(200)
+            self._send_cors_headers()
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(HMI_STATE).encode('utf-8'))
         else:
             self.send_response(404)
+            self._send_cors_headers()
             self.end_headers()
 
     def do_POST(self):
@@ -32,6 +44,7 @@ class MockHMIRequestHandler(BaseHTTPRequestHandler):
                     HMI_STATE["last_roi_sent"] = roi
                     print(f"[Mock Server] Received ROI: {roi}")
                     self.send_response(200)
+                    self._send_cors_headers()
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({"status": "SUCCESS", "roi": roi}).encode('utf-8'))
@@ -39,9 +52,11 @@ class MockHMIRequestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 pass
             self.send_response(400)
+            self._send_cors_headers()
             self.end_headers()
         else:
             self.send_response(404)
+            self._send_cors_headers()
             self.end_headers()
 
     def log_message(self, format, *args):

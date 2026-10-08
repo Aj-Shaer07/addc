@@ -6,6 +6,11 @@ The app communicates over a Tailscale mesh VPN with the drone's companion comput
 
 ---
 
+## 🎨 UI/UX Features
+- **Modern Dark Theme**: Sleek glassmorphism and gradient design tailored for high-contrast visibility.
+- **Micro-Animations**: Hover effects, press states, and glowing text for an immersive, tech-forward experience.
+- **Real-Time Dashboard**: Monitor connection status and drone status simultaneously.
+
 ## 🛠 Prerequisites
 
 Before you can run or build this app, ensure you have the following installed on your development machine:
@@ -16,9 +21,7 @@ Before you can run or build this app, ensure you have the following installed on
 
 ## 🚀 Step 1: Initial Setup
 
-This repository contains the pure Dart/Flutter source code (`lib/`, `pubspec.yaml`, etc.), but does not include the native boilerplate platform folders (`android/`, `ios/`, `web/`) to keep the repository clean.
-
-To generate these folders and download the required packages, run the following commands in your terminal:
+To generate the required platform folders and download dependencies, run the following commands in your terminal:
 
 ```bash
 # 1. Navigate into the HMI app directory
@@ -47,11 +50,8 @@ You can test the app on your computer using a simulator or your web browser befo
 
 2. **Run the Flutter App:**
    ```bash
-   # Make sure you are in the addc_hmi directory
-   cd addc_hmi
-   
-   # Run the app (select your target device when prompted, e.g., Chrome or an Emulator)
-   flutter run
+   # Run the app locally on a web browser
+   flutter run -d web-server
    ```
 
 3. **Connecting the App:**
@@ -63,7 +63,15 @@ You can test the app on your computer using a simulator or your web browser befo
 
 ## 📦 Step 3: Building for Production
 
-When you are ready to install the app permanently on the runner's smartphone, you need to build the production APK (Android) or IPA (iOS).
+When you are ready to install the app permanently on the runner's smartphone, you need to build the production application.
+
+### 🌐 Build for Web (Recommended for Hackathons)
+If you prefer the runner to access the app via a URL on their phone's browser instead of installing an app:
+```bash
+flutter build web --release
+```
+- **Output location:** `build/web/`
+- **Installation:** Host the contents of this folder on any web server.
 
 ### 🤖 Build for Android (APK)
 This is the easiest method for Android phones.
@@ -81,14 +89,6 @@ flutter build ipa --release
 - **Output location:** `build/ios/archive/Runner.xcarchive` (and subsequently the `.ipa` file).
 - **Installation:** You will need to deploy this to your iPhone using Xcode or Apple Configurator.
 
-### 🌐 Build for Web (Optional)
-If you prefer the runner to access the app via a URL on their phone's browser instead of installing an app:
-```bash
-flutter build web --release
-```
-- **Output location:** `build/web/`
-- **Installation:** Host the contents of this folder on any web server.
-
 ---
 
 ## 🏗 Architecture Overview
@@ -96,5 +96,5 @@ flutter build web --release
 - **`lib/main.dart`**: Application entry point and theme configuration.
 - **`lib/services/api_service.dart`**: Handles the HTTP `GET` and `POST` requests to the drone over the Tailscale network.
 - **`lib/providers/drone_state_provider.dart`**: Core logic. Manages the 1-second polling loop and updates the UI when the drone state changes.
-- **`lib/ui/settings_screen.dart`**: The connection screen where the Tailscale IP is configured.
-- **`lib/ui/dashboard_screen.dart`**: The main operative dashboard displaying the access code and sector dispatch buttons.
+- **`lib/ui/settings_screen.dart`**: The connection screen where the Tailscale IP is configured. Featuring a modern glassmorphic card design.
+- **`lib/ui/dashboard_screen.dart`**: The main operative dashboard displaying the access code and sector dispatch buttons with interactive animations.
