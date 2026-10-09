@@ -316,6 +316,8 @@ class PrecisionLandingNode(Node):
             
             # Send pure vertical descent
             vel = TwistStamped()
+            vel.header.stamp = self.get_clock().now().to_msg()
+            vel.header.frame_id = "map"
             vel.twist.linear.x = 0.0
             vel.twist.linear.y = 0.0
             vel.twist.linear.z = -self.descent_speed
@@ -337,6 +339,8 @@ class PrecisionLandingNode(Node):
             self.publish_status("VISUAL_TRACKING")
             
             vel = TwistStamped()
+            vel.header.stamp = self.get_clock().now().to_msg()
+            vel.header.frame_id = "map"
             vel.twist.linear.x = float(err_x * 0.5)  # P-controller
             vel.twist.linear.y = float(err_y * 0.5)
             vel.twist.linear.z = -self.descent_speed
@@ -346,6 +350,8 @@ class PrecisionLandingNode(Node):
             if self.pad_locked and (now - self.last_seen_time < 2.0):
                 # Temporary loss, hover and wait
                 vel = TwistStamped()
+                vel.header.stamp = self.get_clock().now().to_msg()
+                vel.header.frame_id = "map"
                 vel.twist.linear.x = 0.0
                 vel.twist.linear.y = 0.0
                 vel.twist.linear.z = 0.0
@@ -370,6 +376,8 @@ class PrecisionLandingNode(Node):
                 vy = radius * math.cos(self.spiral_angle) * 0.5
                 
                 vel = TwistStamped()
+                vel.header.stamp = self.get_clock().now().to_msg()
+                vel.header.frame_id = "map"
                 vel.twist.linear.x = float(vx)
                 vel.twist.linear.y = float(vy)
                 vel.twist.linear.z = 0.0 # Maintain altitude during search
