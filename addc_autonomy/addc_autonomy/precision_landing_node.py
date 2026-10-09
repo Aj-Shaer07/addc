@@ -148,9 +148,9 @@ class PrecisionLandingNode(Node):
             self.camera.start()
             time.sleep(1.0)
 
+            self.camera_initialized = True
             self.cam_thread = threading.Thread(target=self._picamera_worker, daemon=True)
             self.cam_thread.start()
-            self.camera_initialized = True
             self.get_logger().info("[Landing] Picamera2 hardware started successfully.")
             return True
         except Exception as e:
