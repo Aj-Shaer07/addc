@@ -140,6 +140,16 @@ ros2 run addc_autonomy hmi_bridge
 python3 src/addc/addc_autonomy/test/test_rpi_hmi_roi.py
 ```
 
+**6. Precision Landing Node Test (Manual Trigger)**
+*(Verifies the landing camera and PID visual servoing)*
+```bash
+# Terminal 1: Boot the node (It will remain 'Idle')
+ros2 run addc_autonomy precision_landing --ros-args -p use_sim_time:=false -p enable_debug_window:=true
+
+# Terminal 2: Manually trigger the landing sequence
+ros2 service call /addc/landing/start std_srvs/srv/Trigger
+```
+
 ---
 
 ## 4. Full Pipeline Launch Commands (Gazebo SITL)

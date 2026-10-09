@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-from pyzbar.pyzbar import decode as pyzbar_decode
+from pyzbar.pyzbar import decode as pyzbar_decode, ZBarSymbol
 
 # Standard ROS 2 imports
 import rclpy
@@ -228,17 +228,17 @@ class QRVisionNode(Node):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # PyZBar instantly finds and decodes QR codes from any angle/density
-        decoded_objects = pyzbar_decode(gray)
+        decoded_objects = pyzbar_decode(gray, symbols=[ZBarSymbol.QRCODE])
 
         # Fallback 1: Laptop Screen Glare Darkening
         if not decoded_objects:
             darkened = cv2.LUT(gray, self.gamma_lut)
-            decoded_objects = pyzbar_decode(darkened)
+            decoded_objects = pyzbar_decode(darkened, symbols=[ZBarSymbol.QRCODE])
             
         # Fallback 2: CLAHE Contrast Boost
         if not decoded_objects:
             enhanced = self.clahe.apply(gray)
-            decoded_objects = pyzbar_decode(enhanced)
+            decoded_objects = pyzbar_decode(enhanced, symbols=[ZBarSymbol.QRCODE])
 
         if not decoded_objects:
             return None, None, 0.0, 0.0

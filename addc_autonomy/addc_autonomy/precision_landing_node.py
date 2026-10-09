@@ -48,6 +48,7 @@ class PrecisionLandingNode(Node):
         if not self.has_parameter('use_sim_time'):
             self.declare_parameter('use_sim_time', False)
         self.declare_parameter('camera_topic', '/camera/image_raw')
+        self.declare_parameter('enable_debug_window', False)
         self.declare_parameter('landing_alt_threshold', 0.5) # meters (Washout lock threshold)
         self.declare_parameter('descent_speed', 0.3) # m/s
         self.declare_parameter('spiral_radius_max', 2.0)
@@ -57,6 +58,10 @@ class PrecisionLandingNode(Node):
         self.washout_threshold = float(self.get_parameter('landing_alt_threshold').value)
         self.descent_speed = float(self.get_parameter('descent_speed').value)
         self.spiral_radius_max = float(self.get_parameter('spiral_radius_max').value)
+        self.enable_gui = self.get_parameter('enable_debug_window').value
+
+        if self.enable_gui:
+            cv2.namedWindow("Precision Landing HUD", cv2.WINDOW_NORMAL)
 
         # State Variables
         self.is_active = False
@@ -256,7 +261,22 @@ class PrecisionLandingNode(Node):
                 err_x = max(-1.0, min(1.0, err_x))
                 err_y = max(-1.0, min(1.0, err_y))
                 
+                # Draw debug info
+                if self.enable_gui:
+                    cv2.drawContours(frame, [approx], -1, (0, 255, 0), 3)
+                    cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+                    cv2.putText(frame, f"LOCKED: errX={err_x:.2f} errY={err_y:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+                if self.enable_gui:
+                    cv2.imshow("Precision Landing HUD", frame)
+                    cv2.waitKey(1)
+                
                 return True, err_x, err_y
+
+        if self.enable_gui:
+            cv2.putText(frame, "NO PAD DETECTED", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.imshow("Precision Landing HUD", frame)
+            cv2.waitKey(1)
 
         # Pad not found in this physical frame
         return False, 0.0, 0.0
