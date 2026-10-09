@@ -24,6 +24,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped, Point
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from mavros_msgs.msg import State
+from mavros_msgs.srv import SetMode
 from sensor_msgs.msg import Image
 from rclpy.qos import qos_profile_sensor_data
 
@@ -92,6 +93,7 @@ class PrecisionLandingNode(Node):
 
         # ROS 2 Services
         self.start_srv = self.create_service(Trigger, '/addc/landing/start', self._start_landing_cb)
+        self.set_mode_client = self.create_client(SetMode, '/mavros/set_mode')
 
         # Vision Setup
         self.bridge = CvBridge() if CV_BRIDGE_AVAILABLE else None
@@ -285,6 +287,14 @@ class PrecisionLandingNode(Node):
         msg = String()
         msg.data = "LAND"
         self.landing_cmd_pub.publish(msg)
+        
+        # Directly trigger MAVROS LAND if testing standalone
+        if self.set_mode_client.service_is_ready():
+            req = SetMode.Request()
+            req.custom_mode = "LAND"
+            self.set_mode_client.call_async(req)
+            self.get_logger().info("[Landing] Standalone override: Triggered MAVROS LAND mode.")
+
         self.publish_status("FALLBACK_BLIND_LAND")
         self.is_active = False
 

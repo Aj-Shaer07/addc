@@ -56,6 +56,7 @@ class MissionControlNode(Node):
         self.search_wp_sub = self.create_subscription(PoseStamped, '/addc/search/waypoint', self._search_wp_cb, 10)
         self.search_activate_pub = self.create_publisher(Bool, '/addc/search/activate', 10)
         self.state_pub = self.create_publisher(String, '/addc/mission/state', 10)
+        self.land_cmd_sub = self.create_subscription(String, '/addc/mission/land_cmd', self._land_cmd_cb, 10)
         
         # MAVROS Services
         self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
@@ -101,6 +102,11 @@ class MissionControlNode(Node):
         if self.current_state == "SEARCHING":
             self.target_pose = msg
             self.target_pose.pose.orientation.w = 1.0
+
+    def _land_cmd_cb(self, msg: String):
+        if msg.data == "LAND":
+            self.get_logger().info("[Orchestrator] Received LAND override from Precision Landing Node! Executing...")
+            self._set_mode("LAND")
 
     def _set_mode(self, mode: str):
         if self.set_mode_client.service_is_ready():
