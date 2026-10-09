@@ -17,7 +17,7 @@ from typing import List, Tuple, Optional
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Polygon
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray, String
 from rclpy.qos import qos_profile_sensor_data
 from mavros_msgs.msg import WaypointList, HomePosition
 from mavros_msgs.srv import WaypointPull
@@ -53,9 +53,9 @@ class SearchNode(Node):
             self.get_logger().warn(f"[Search] Failed to parse tree obstacles JSON: {e}. Using empty obstacle list.")
             self.tree_obstacles = []
 
-        # ROS 2 Publishers
         self.target_waypoint_pub = self.create_publisher(PoseStamped, '/addc/search/waypoint', 10)
         self.search_completed_pub = self.create_publisher(Bool, '/addc/search/completed', 10)
+        self.sectors_pub = self.create_publisher(String, '/addc/mission/sectors', 10)
 
         # ROS 2 Subscribers
         self.activate_sub = self.create_subscription(
@@ -196,6 +196,29 @@ class SearchNode(Node):
             self.waypoints = wps
             self.current_idx = 0
             self.get_logger().info(f"[Search] Auto-ingested {len(wps)} dynamic global waypoints from GCS Mission upload!")
+            
+            # Calculate True Dynamic Sectors
+            min_x = min([w[0] for w in wps])
+            max_x = max([w[0] for w in wps])
+            min_y = min([w[1] for w in wps])
+            max_y = max([w[1] for w in wps])
+            
+            mid_x = (min_x + max_x) / 2.0
+            mid_y = (min_y + max_y) / 2.0
+            
+            # Note: Using ROS ENU (X=North, Y=West/East).
+            # We map NW/NE/SW/SE logically based on upper/lower bounds.
+            sectors = [
+                {"name": "Sector 1 (NW)", "description": f"X[{mid_x:.1f}-{max_x:.1f}], Y[{min_y:.1f}-{mid_y:.1f}]", "roi": [mid_x, max_x, min_y, mid_y]},
+                {"name": "Sector 2 (NE)", "description": f"X[{mid_x:.1f}-{max_x:.1f}], Y[{mid_y:.1f}-{max_y:.1f}]", "roi": [mid_x, max_x, mid_y, max_y]},
+                {"name": "Sector 3 (SW)", "description": f"X[{min_x:.1f}-{mid_x:.1f}], Y[{min_y:.1f}-{mid_y:.1f}]", "roi": [min_x, mid_x, min_y, mid_y]},
+                {"name": "Sector 4 (SE)", "description": f"X[{min_x:.1f}-{mid_x:.1f}], Y[{mid_y:.1f}-{max_y:.1f}]", "roi": [min_x, mid_x, mid_y, max_y]}
+            ]
+            
+            msg_sectors = String()
+            msg_sectors.data = json.dumps(sectors)
+            self.sectors_pub.publish(msg_sectors)
+            self.get_logger().info(f"[Search] Broadcasted 4 dynamic sectors to HMI: Bounds X[{min_x:.1f}, {max_x:.1f}], Y[{min_y:.1f}, {max_y:.1f}]")
 
     def _publish_health(self):
         msg = Bool()

@@ -14,7 +14,7 @@ from rclpy.qos import qos_profile_sensor_data
 
 # MAVROS imports
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode, CommandTOL, StreamRate
+from mavros_msgs.srv import CommandBool, SetMode, CommandTOL, StreamRate, CommandHome
 
 class MissionControlNode(Node):
     def __init__(self):
@@ -55,12 +55,14 @@ class MissionControlNode(Node):
         self.vision_sub = self.create_subscription(String, '/addc/vision/decoded_digits', self._vision_cb, 10)
         self.search_wp_sub = self.create_subscription(PoseStamped, '/addc/search/waypoint', self._search_wp_cb, 10)
         self.search_activate_pub = self.create_publisher(Bool, '/addc/search/activate', 10)
+        self.state_pub = self.create_publisher(String, '/addc/mission/state', 10)
         
         # MAVROS Services
         self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.set_mode_client = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_client = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
         self.stream_rate_client = self.create_client(StreamRate, '/mavros/set_stream_rate')
+        self.set_home_client = self.create_client(CommandHome, '/mavros/cmd/set_home')
         
         # ADDC Services
         self.release_cam_client = self.create_client(Trigger, '/addc/vision/release_camera')
@@ -146,8 +148,8 @@ class MissionControlNode(Node):
                 crashed_nodes.append(node)
                 
         if crashed_nodes and not self.drone_halted:
-            self.get_logger().error(f"[Orchestrator] WATCHDOG TRIGGERED! {crashed_nodes} crashed! Halting drone in LOITER...")
-            self._set_mode("LOITER")
+            self.get_logger().error(f"[Orchestrator] WATCHDOG TRIGGERED! {crashed_nodes} crashed! Failsafe triggered: Gently LANDING drone...")
+            self._set_mode("LAND")
             self.drone_halted = True
         elif not crashed_nodes and self.drone_halted:
             self.get_logger().info("[Orchestrator] All nodes recovered. Resuming mission in GUIDED...")
@@ -187,10 +189,18 @@ class MissionControlNode(Node):
                     self.get_logger().info("[Orchestrator] Sending Arming command...")
                     self._arm()
                     self.last_service_time = now
+                elif not getattr(self, 'home_set_requested', False):
+                    self.get_logger().info("[Orchestrator] Armed! Explicitly resetting MAVROS Home Position to CURRENT GPS...")
+                    if self.set_home_client.service_is_ready():
+                        req = CommandHome.Request()
+                        req.current_gps = True
+                        self.set_home_client.call_async(req)
+                    self.home_set_requested = True
+                    self.last_service_time = now
                 else:
                     self.home_x = self.current_pose.pose.position.x
                     self.home_y = self.current_pose.pose.position.y
-                    self.get_logger().info(f"[Orchestrator] Armed. Recorded HOME as X={self.home_x:.2f}, Y={self.home_y:.2f}. Sending Takeoff to {self.search_altitude}m")
+                    self.get_logger().info(f"[Orchestrator] Recorded Local HOME as X={self.home_x:.2f}, Y={self.home_y:.2f}. Sending Takeoff to {self.search_altitude}m")
                     self._takeoff(self.search_altitude)
                     self.current_state = "TAKEOFF"
                     self.last_service_time = now
@@ -239,6 +249,11 @@ class MissionControlNode(Node):
                 
         elif self.current_state == "DISARMED":
             pass
+
+        # Broadcast the current flight phase to the HMI Bridge
+        msg = String()
+        msg.data = self.current_state
+        self.state_pub.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

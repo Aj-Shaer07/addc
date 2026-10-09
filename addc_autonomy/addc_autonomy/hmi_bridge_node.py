@@ -18,12 +18,20 @@ from typing import Optional
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, String
+from geometry_msgs.msg import PoseStamped
+from mavros_msgs.msg import HomePosition
+from rclpy.qos import qos_profile_sensor_data
 
 # In-memory shared state between ROS 2 node and HTTP server
 HMI_STATE = {
     "decoded_digits": None,
     "last_roi_sent": None,
-    "drone_status": "IDLE"
+    "drone_status": "WAITING FOR FCU",
+    "drone_pos_x": 0.0,
+    "drone_pos_y": 0.0,
+    "home_lat": 0.0,
+    "home_lon": 0.0,
+    "sectors": None
 }
 HMI_NODE_REF = None
 
@@ -180,6 +188,30 @@ class HMIBridgeNode(Node):
             self._digits_callback,
             10
         )
+        self.state_sub = self.create_subscription(
+            String,
+            '/addc/mission/state',
+            self._state_callback,
+            10
+        )
+        self.pose_sub = self.create_subscription(
+            PoseStamped,
+            '/mavros/local_position/pose',
+            self._pose_callback,
+            qos_profile_sensor_data
+        )
+        self.home_sub = self.create_subscription(
+            HomePosition,
+            '/mavros/home_position/home',
+            self._home_callback,
+            qos_profile_sensor_data
+        )
+        self.sectors_sub = self.create_subscription(
+            String,
+            '/addc/mission/sectors',
+            self._sectors_callback,
+            10
+        )
 
         # Start Background HTTP Server
         self.server = HTTPServer(('0.0.0.0', self.http_port), HMIRequestHandler)
@@ -197,6 +229,24 @@ class HMIBridgeNode(Node):
     def _digits_callback(self, msg: String):
         HMI_STATE["decoded_digits"] = msg.data
         self.get_logger().info(f"[HMI] Decoded digits received from vision: {msg.data}. Available for runner.")
+
+    def _state_callback(self, msg: String):
+        HMI_STATE["drone_status"] = msg.data
+
+    def _pose_callback(self, msg: PoseStamped):
+        HMI_STATE["drone_pos_x"] = msg.pose.position.x
+        HMI_STATE["drone_pos_y"] = msg.pose.position.y
+
+    def _home_callback(self, msg: HomePosition):
+        HMI_STATE["home_lat"] = msg.geo.latitude
+        HMI_STATE["home_lon"] = msg.geo.longitude
+
+    def _sectors_callback(self, msg: String):
+        try:
+            HMI_STATE["sectors"] = json.loads(msg.data)
+            self.get_logger().info("[HMI] Received dynamic sectors from Search Node.")
+        except Exception:
+            pass
 
     def destroy_node(self):
         self.server.shutdown()

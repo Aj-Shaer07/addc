@@ -149,7 +149,8 @@ To run the full autonomous mission in Gazebo SITL with ArduPilot, open **6 separ
 **Terminal 1: Start Gazebo Simulator**
 ```bash
 source ~/ros2_ws/install/setup.bash
-export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$HOME/ros2_ws/src/ardupilot_gazebo/models:$HOME/ros2_ws/src/addc/addc_autonomy/models
+export GZ_SIM_RESOURCE_PATH=$HOME/ros2_ws/install/ardupilot_gazebo/share:$HOME/ros2_ws/install/ardupilot_gazebo/share/ardupilot_gazebo/models:$HOME/ros2_ws/src/addc/addc_autonomy/models:${GZ_SIM_RESOURCE_PATH}
+export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/ros2_ws/install/ardupilot_gazebo/lib/ardupilot_gazebo:${GZ_SIM_SYSTEM_PLUGIN_PATH}
 gz sim -r -v 4 ~/ros2_ws/src/addc/addc_autonomy/worlds/addc_arena.world
 ```
 *(Leave this running. It hosts the 3D physics and camera).*

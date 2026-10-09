@@ -2,11 +2,28 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
+import time
+import threading
+
 HMI_STATE = {
     "decoded_digits": "42",
     "last_roi_sent": None,
-    "drone_status": "MOCK_FLIGHT"
+    "drone_status": "MOCK_SEARCHING",
+    "drone_pos_x": 10.0,
+    "drone_pos_y": 2.0
 }
+
+def simulate_flight():
+    while True:
+        # Fly diagonally across the map to test all sectors
+        HMI_STATE["drone_pos_x"] += 0.5
+        HMI_STATE["drone_pos_y"] += 0.2
+        if HMI_STATE["drone_pos_x"] > 22.0:
+            HMI_STATE["drone_pos_x"] = 6.0
+            HMI_STATE["drone_pos_y"] = -8.0
+        time.sleep(1.0)
+
+threading.Thread(target=simulate_flight, daemon=True).start()
 
 class MockHMIRequestHandler(BaseHTTPRequestHandler):
     def _send_cors_headers(self):

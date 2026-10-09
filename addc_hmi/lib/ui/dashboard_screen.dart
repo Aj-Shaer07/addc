@@ -240,18 +240,38 @@ class DashboardScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.gps_fixed, color: Colors.blueAccent),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('RUNNER LOCATION', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
-                Text(provider.currentSector, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ],
-            ),
+          Row(
+            children: [
+              const Icon(Icons.person_pin_circle, color: Colors.blueAccent),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('OPERATIVE LOCATION', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+                    Text(provider.operativeLocationString, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Row(
+            children: [
+              const Icon(Icons.flight_takeoff, color: Colors.orangeAccent),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('UAV LOCATION', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+                    Text(provider.droneLocationString, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -283,10 +303,14 @@ class DashboardScreen extends StatelessWidget {
           itemCount: provider.sectors.length,
           itemBuilder: (context, index) {
             final sector = provider.sectors[index];
+            bool droneHere = provider.droneLocationString.contains(sector.name);
+            bool operativeHere = provider.isOperativeInSector(sector.name);
             return _SectorButton(
               title: sector.name,
               subtitle: sector.description,
               onTap: () => provider.dispatchRoi(sector.roi, sector.name),
+              isDroneHere: droneHere,
+              isOperativeHere: operativeHere,
             );
           },
         ),
@@ -348,38 +372,55 @@ class _SectorButton extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool isDroneHere;
+  final bool isOperativeHere;
 
   const _SectorButton({
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.isDroneHere = false,
+    this.isOperativeHere = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
+        backgroundColor: isDroneHere ? Colors.orange[50] : (isOperativeHere ? Colors.blue[50] : Colors.white),
         foregroundColor: Colors.blueAccent,
-        elevation: 0,
+        elevation: (isDroneHere || isOperativeHere) ? 4 : 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey[300]!),
+          side: BorderSide(
+            color: isDroneHere ? Colors.orangeAccent : (isOperativeHere ? Colors.blueAccent : Colors.grey[300]!),
+            width: (isDroneHere || isOperativeHere) ? 2 : 1,
+          ),
         ),
       ),
       onPressed: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          if (isDroneHere || isOperativeHere)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isOperativeHere) const Icon(Icons.person_pin_circle, color: Colors.blueAccent),
+                if (isOperativeHere && isDroneHere) const SizedBox(width: 8),
+                if (isDroneHere) const Icon(Icons.flight_takeoff, color: Colors.orangeAccent),
+              ],
+            ),
+          if (isDroneHere || isOperativeHere) const SizedBox(height: 4),
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDroneHere ? Colors.orange[800] : Colors.blueAccent),
           ),
           const SizedBox(height: 4),
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.grey[600],
+              color: isDroneHere ? Colors.orange[600] : Colors.grey[600],
               fontSize: 12,
             ),
             textAlign: TextAlign.center,

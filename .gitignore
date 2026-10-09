@@ -28,3 +28,14 @@ src/ardupilot_sitl_models
 src/micro_ros_agent
 src/ros_gz
 src/sdformat_urdf
+
+# SITL / Gazebo generated files
+mav.parm
+eeprom.bin
+mav.tlog
+mav.tlog.raw
+logs/
+terrain/
+*.stg
+*.bin
+*.log

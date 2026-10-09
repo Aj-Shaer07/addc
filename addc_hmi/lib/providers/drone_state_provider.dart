@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:math' as math;
 import '../services/api_service.dart';
 
 class Sector {
@@ -25,6 +26,24 @@ class DroneStateProvider extends ChangeNotifier {
   String _droneStatus = 'IDLE';
   String get droneStatus => _droneStatus;
 
+  double _dronePosX = 0.0;
+  double get dronePosX => _dronePosX;
+
+  double _dronePosY = 0.0;
+  double get dronePosY => _dronePosY;
+
+  String get droneLocationString {
+    String sectorName = "Unknown Sector";
+    for (var s in _sectors) {
+      if (_dronePosX >= s.roi[0] && _dronePosX <= s.roi[1] &&
+          _dronePosY >= s.roi[2] && _dronePosY <= s.roi[3]) {
+        sectorName = s.name;
+        break;
+      }
+    }
+    return "X: ${_dronePosX.toStringAsFixed(1)}, Y: ${_dronePosY.toStringAsFixed(1)} ($sectorName)";
+  }
+
   List<String> _actionLogs = [];
   List<String> get actionLogs => _actionLogs;
 
@@ -37,6 +56,48 @@ class DroneStateProvider extends ChangeNotifier {
   Position? _runnerPosition;
   Position? get runnerPosition => _runnerPosition;
   StreamSubscription<Position>? _positionStream;
+
+  double _homeLat = 0.0;
+  double _homeLon = 0.0;
+
+  double _operativePosX = 0.0;
+  double _operativePosY = 0.0;
+
+  String get operativeLocationString {
+    if (_runnerPosition == null) return "Waiting for GPS...";
+    if (_homeLat == 0.0 && _homeLon == 0.0) return "GPS Active (Waiting for Drone Home)";
+
+    // Haversine Flat-Earth Approximation (Same as ROS 2 ENU)
+    double r = 6378137.0;
+    double dlat = (_runnerPosition!.latitude - _homeLat) * (math.pi / 180.0);
+    double dlon = (_runnerPosition!.longitude - _homeLon) * (math.pi / 180.0);
+    double refLatRad = _homeLat * (math.pi / 180.0);
+
+    _operativePosX = dlon * r * math.cos(refLatRad);
+    _operativePosY = dlat * r;
+
+    String sectorName = "Outside Grid";
+    for (var s in _sectors) {
+      if (_operativePosX >= s.roi[0] && _operativePosX <= s.roi[1] &&
+          _operativePosY >= s.roi[2] && _operativePosY <= s.roi[3]) {
+        sectorName = s.name;
+        break;
+      }
+    }
+    return "X: ${_operativePosX.toStringAsFixed(1)}, Y: ${_operativePosY.toStringAsFixed(1)} ($sectorName)";
+  }
+
+  bool isOperativeInSector(String sectorName) {
+    if (_runnerPosition == null || _homeLat == 0.0) return false;
+    for (var s in _sectors) {
+      if (s.name == sectorName) {
+        return _operativePosX >= s.roi[0] && _operativePosX <= s.roi[1] &&
+               _operativePosY >= s.roi[2] && _operativePosY <= s.roi[3];
+      }
+    }
+    return false;
+  }
+
   String _currentSector = 'Unknown';
   String get currentSector => _currentSector;
 
@@ -61,6 +122,25 @@ class DroneStateProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _updateStatus(Map<String, dynamic> status) {
+    _isConnected = true;
+    _decodedDigits = status['decoded_digits'] ?? '--';
+    _droneStatus = status['drone_status'] ?? 'IDLE';
+    _dronePosX = (status['drone_pos_x'] ?? 0.0).toDouble();
+    _dronePosY = (status['drone_pos_y'] ?? 0.0).toDouble();
+    _homeLat = (status['home_lat'] ?? 0.0).toDouble();
+    _homeLon = (status['home_lon'] ?? 0.0).toDouble();
+
+    if (status['sectors'] != null) {
+      List<dynamic> rawSectors = status['sectors'];
+      _sectors = rawSectors.map((s) => Sector(
+        name: s['name'],
+        description: s['description'],
+        roi: (s['roi'] as List).map((e) => (e as num).toDouble()).toList()
+      )).toList();
+    }
+  }
+
   Future<bool> saveIpAndConnect(String ip) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('tailscale_ip', ip);
@@ -69,9 +149,7 @@ class DroneStateProvider extends ChangeNotifier {
     
     try {
       final status = await _apiService!.fetchStatus();
-      _isConnected = true;
-      _decodedDigits = status['decoded_digits'] ?? '--';
-      _droneStatus = status['drone_status'] ?? 'IDLE';
+      _updateStatus(status);
       _startPolling();
       _startLocationTracking();
       notifyListeners();
@@ -89,9 +167,7 @@ class DroneStateProvider extends ChangeNotifier {
       if (_apiService == null) return;
       try {
         final status = await _apiService!.fetchStatus();
-        _isConnected = true;
-        _decodedDigits = status['decoded_digits'] ?? '--';
-        _droneStatus = status['drone_status'] ?? 'IDLE';
+        _updateStatus(status);
         notifyListeners();
       } catch (e) {
         _isConnected = false;
