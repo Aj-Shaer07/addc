@@ -20,6 +20,7 @@ from geometry_msgs.msg import PoseStamped, Polygon
 from std_msgs.msg import Bool, Float32MultiArray
 from rclpy.qos import qos_profile_sensor_data
 from mavros_msgs.msg import WaypointList, HomePosition
+from mavros_msgs.srv import WaypointPull
 
 
 class SearchNode(Node):
@@ -87,6 +88,13 @@ class SearchNode(Node):
             self._mission_callback,
             qos_profile_sensor_data
         )
+
+        # Fault-Tolerant Heartbeat Publisher
+        self.health_pub = self.create_publisher(Bool, '/addc/health/search_node', 10)
+        self.health_timer = self.create_timer(0.5, self._publish_health)
+
+        # Waypoint Pull Client
+        self.mission_pull_cli = self.create_client(WaypointPull, '/mavros/mission/pull')
 
         # Internal State
         self.is_active = False
@@ -189,11 +197,25 @@ class SearchNode(Node):
             self.current_idx = 0
             self.get_logger().info(f"[Search] Auto-ingested {len(wps)} dynamic global waypoints from GCS Mission upload!")
 
+    def _publish_health(self):
+        msg = Bool()
+        msg.data = True
+        self.health_pub.publish(msg)
+
     def _activate_callback(self, msg: Bool):
         self.is_active = msg.data
         self.get_logger().info(f"[Search] Active state changed to: {self.is_active}")
-        if self.is_active and self.waypoints:
-            self._publish_current_waypoint()
+        
+        if self.is_active:
+            # Explicitly demand MAVROS to pull the freshest waypoints from Pixhawk RAM
+            self.get_logger().info("[Search] Requesting fresh mission pull from Pixhawk...")
+            if self.mission_pull_cli.wait_for_service(timeout_sec=2.0):
+                self.mission_pull_cli.call_async(WaypointPull.Request())
+            else:
+                self.get_logger().warn("[Search] MAVROS mission pull service not available!")
+                
+            if self.waypoints:
+                self._publish_current_waypoint()
 
     def _hmi_roi_callback(self, msg: Float32MultiArray):
         """

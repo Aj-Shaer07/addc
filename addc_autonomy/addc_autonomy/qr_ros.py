@@ -22,7 +22,7 @@ from pyzbar.pyzbar import decode as pyzbar_decode
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point, PoseStamped
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 from rclpy.qos import qos_profile_sensor_data
@@ -65,6 +65,10 @@ class QRVisionNode(Node):
         # Target Offset: X = Error_X (-1.0 to 1.0), Y = Error_Y (-1.0 to 1.0), Z = Lock Status (1.0 = locked, 0.0 = lost)
         self.target_offset_pub = self.create_publisher(Point, '/addc/vision/target_offset', 10)
         self.decoded_digits_pub = self.create_publisher(String, '/addc/vision/decoded_digits', 10)
+        
+        # Fault-Tolerant Heartbeat
+        self.health_pub = self.create_publisher(Bool, '/addc/health/qr_ros', 10)
+        self.health_timer = self.create_timer(0.5, self._publish_health)
 
         # ROS 2 Services
         self.release_cam_srv = self.create_service(Trigger, '/addc/vision/release_camera', self._release_camera_cb)
@@ -139,6 +143,11 @@ class QRVisionNode(Node):
             response.message = "Camera already released or running in SITL/passive mode."
             self.get_logger().info(f"[Vision] {response.message}")
         return response
+
+    def _publish_health(self):
+        msg = Bool()
+        msg.data = True
+        self.health_pub.publish(msg)
 
     def _init_picamera2(self):
         if not PICAMERA2_AVAILABLE:

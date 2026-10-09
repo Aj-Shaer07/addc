@@ -69,6 +69,18 @@ class MissionControlNode(Node):
         # Main State Machine Loop (10 Hz)
         self.timer = self.create_timer(0.1, self._state_machine_loop)
         
+        # Fault-Tolerant Watchdog
+        self.health_stamps = {
+            'qr_ros': self.get_clock().now(),
+            'search_node': self.get_clock().now()
+        }
+        self.health_subs = {
+            'qr_ros': self.create_subscription(Bool, '/addc/health/qr_ros', lambda msg: self._health_cb(msg, 'qr_ros'), 10),
+            'search_node': self.create_subscription(Bool, '/addc/health/search_node', lambda msg: self._health_cb(msg, 'search_node'), 10)
+        }
+        self.drone_halted = False
+        self.watchdog_timer = self.create_timer(0.2, self._watchdog_loop)
+        
         self.get_logger().info("[Orchestrator] Mission Control Initialized. Waiting for FCU...")
 
     def _mavros_state_cb(self, msg: State):
@@ -117,6 +129,30 @@ class MissionControlNode(Node):
         msg = Bool()
         msg.data = active
         self.search_activate_pub.publish(msg)
+
+    def _health_cb(self, msg: Bool, node_name: str):
+        if msg.data:
+            self.health_stamps[node_name] = self.get_clock().now()
+
+    def _watchdog_loop(self):
+        # Don't halt if not actively flying a mission
+        if self.current_state not in ["SEARCHING", "TARGET_FOUND"]:
+            return
+            
+        now = self.get_clock().now()
+        crashed_nodes = []
+        for node, stamp in self.health_stamps.items():
+            if (now - stamp).nanoseconds / 1e9 > 2.0:
+                crashed_nodes.append(node)
+                
+        if crashed_nodes and not self.drone_halted:
+            self.get_logger().error(f"[Orchestrator] WATCHDOG TRIGGERED! {crashed_nodes} crashed! Halting drone in LOITER...")
+            self._set_mode("LOITER")
+            self.drone_halted = True
+        elif not crashed_nodes and self.drone_halted:
+            self.get_logger().info("[Orchestrator] All nodes recovered. Resuming mission in GUIDED...")
+            self._set_mode("GUIDED")
+            self.drone_halted = False
 
     def _state_machine_loop(self):
         if not self.mavros_state.connected:
@@ -167,6 +203,8 @@ class MissionControlNode(Node):
                 self.current_state = "SEARCHING"
 
         elif self.current_state == "SEARCHING":
+            if self.drone_halted:
+                return
             # Stream active lawnmower target pose from search node
             self.local_pos_pub.publish(self.target_pose)
 

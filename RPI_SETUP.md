@@ -46,6 +46,7 @@ sudo apt install -y \
     python3-pip \
     python3-opencv \
     python3-numpy \
+    python3-pyzbar \
     python3-shapely \
     python3-fastapi \
     python3-uvicorn \

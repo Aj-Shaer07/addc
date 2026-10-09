@@ -1,8 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from tkinter import ttk
 import math
 from pymavlink import mavutil
-import time
+from serial.tools import list_ports
+
+
+TELEMETRY_BAUD = 56700
 
 
 def normalize_connection_string(connection_string):
@@ -38,35 +42,42 @@ def calculate_footprint(alt, fov_deg):
     return width
 
 def generate_grid_gps(poly_lats, poly_lons, trees, alt, fov_deg, overlap=0.2):
-    """Generates a boustrophedon (lawnmower) path inside a bounding box."""
+    """Generates a boustrophedon path whose waypoints are inside the polygon."""
     footprint = calculate_footprint(alt, fov_deg)
     spacing = footprint * (1.0 - overlap)
     
-    # Calculate bounding box
     min_lat, max_lat = min(poly_lats), max(poly_lats)
-    min_lon, max_lon = min(poly_lons), max(poly_lons)
     
     R = 6378137.0
     lat_rad = math.radians(min_lat)
     dy_deg = (spacing / R) * (180.0 / math.pi)
-    dx_deg = (spacing / (R * math.cos(lat_rad))) * (180.0 / math.pi)
-    
+
     wps = []
     lat = min_lat
     sweep_right = True
-    
+
     while lat <= max_lat:
-        lon_start = min_lon if sweep_right else max_lon
-        lon_end = max_lon if sweep_right else min_lon
-        
-        # Start of lane
-        wps.append((lat, lon_start))
-        # End of lane
-        wps.append((lat, lon_end))
-        
+        intersections = []
+        for i in range(len(poly_lats)):
+            next_i = (i + 1) % len(poly_lats)
+            lat_1, lon_1 = poly_lats[i], poly_lons[i]
+            lat_2, lon_2 = poly_lats[next_i], poly_lons[next_i]
+            if (lat_1 <= lat < lat_2) or (lat_2 <= lat < lat_1):
+                crossing_lon = lon_1 + (lat - lat_1) * (lon_2 - lon_1) / (lat_2 - lat_1)
+                intersections.append(crossing_lon)
+
+        intersections.sort()
+        for start in range(0, len(intersections) - 1, 2):
+            lane_start = intersections[start]
+            lane_end = intersections[start + 1]
+            if not sweep_right:
+                lane_start, lane_end = lane_end, lane_start
+            wps.append((lat, lane_start))
+            wps.append((lat, lane_end))
+
         lat += dy_deg
         sweep_right = not sweep_right
-        
+
     # Exclude trees (Simple radius exclusion)
     filtered_wps = []
     for w_lat, w_lon in wps:
@@ -81,8 +92,36 @@ def generate_grid_gps(poly_lats, poly_lons, trees, alt, fov_deg, overlap=0.2):
             
     return filtered_wps
 
+def get_home_coordinates(master):
+    """Read the stored home position, requesting it when necessary."""
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_GET_HOME_POSITION,
+        0,
+        0, 0, 0, 0, 0, 0, 0,
+    )
+    home_position = master.recv_match(
+        type="HOME_POSITION", blocking=True, timeout=5
+    )
+    if home_position and home_position.latitude and home_position.longitude:
+        return home_position.latitude / 1e7, home_position.longitude / 1e7
+
+    current_position = master.recv_match(
+        type="GLOBAL_POSITION_INT", blocking=True, timeout=5
+    )
+    if current_position and current_position.lat and current_position.lon:
+        print(
+            "Warning: flight controller did not publish HOME_POSITION; "
+            "using the current GPS position as home."
+        )
+        return current_position.lat / 1e7, current_position.lon / 1e7
+
+    raise Exception("Could not read the drone's home or GPS position.")
+
 def upload_mission(connection_string, waypoints):
     """Uploads waypoints to the flight controller via MAVLink."""
+    master = None
     try:
         connection_string = normalize_connection_string(connection_string)
         print(f"Connecting to {connection_string}...")
@@ -90,37 +129,109 @@ def upload_mission(connection_string, waypoints):
         master.wait_heartbeat(timeout=5)
         if not master.target_system:
             raise Exception("No heartbeat received from drone.")
+
+        home_lat, home_lon = get_home_coordinates(master)
+        print(f"Using home position: {home_lat:.7f}, {home_lon:.7f}")
+
+        if not waypoints:
+            raise Exception("The polygon did not produce any valid grid waypoints.")
+
+        mission_items = [
+            (
+                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                home_lat,
+                home_lon,
+                waypoints[0][2] if waypoints else 0,
+            )
+        ]
+        mission_items.extend(
+            (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, lat, lon, alt)
+            for lat, lon, alt in waypoints
+        )
+        mission_items.append(
+            (mavutil.mavlink.MAV_CMD_NAV_LAND, home_lat, home_lon, 0)
+        )
+        print(
+            "Mission sequence: TAKEOFF home -> "
+            f"{len(waypoints)} polygon waypoints -> LAND home"
+        )
             
         print("Clearing old mission on the drone...")
         master.mav.mission_clear_all_send(master.target_system, master.target_component)
         master.recv_match(type=['MISSION_ACK'], blocking=True, timeout=3)
         
-        print(f"Uploading {len(waypoints)} grid waypoints...")
-        master.mav.mission_count_send(master.target_system, master.target_component, len(waypoints))
+        print(
+            f"Uploading {len(mission_items)} mission items "
+            f"({len(waypoints)} grid waypoints, takeoff, and landing)..."
+        )
+        master.mav.mission_count_send(
+            master.target_system, master.target_component, len(mission_items)
+        )
         
-        for i, (lat, lon, alt) in enumerate(waypoints):
-            msg = master.recv_match(type=['MISSION_REQUEST'], blocking=True, timeout=3)
+        for i, (command, lat, lon, alt) in enumerate(mission_items):
+            msg = master.recv_match(
+                type=["MISSION_REQUEST", "MISSION_REQUEST_INT"],
+                blocking=True,
+                timeout=5,
+            )
             if not msg:
                 raise Exception(f"Drone did not request mission item {i}")
-                
-            master.mav.mission_item_send(
-                master.target_system,
-                master.target_component,
-                msg.seq,
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0, 1, 0, 0, 0, 0,
-                lat, lon, alt
-            )
+
+            if msg.get_type() == "MISSION_REQUEST_INT":
+                master.mav.mission_item_int_send(
+                    master.target_system,
+                    master.target_component,
+                    msg.seq,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                    command,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    int(round(lat * 1e7)),
+                    int(round(lon * 1e7)),
+                    alt,
+                )
+            else:
+                master.mav.mission_item_send(
+                    master.target_system,
+                    master.target_component,
+                    msg.seq,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                    command,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    lat,
+                    lon,
+                    alt,
+                )
             
         msg = master.recv_match(type=['MISSION_ACK'], blocking=True, timeout=5)
         if msg and msg.type == 0:
             return True
         else:
             return False
+    except PermissionError as e:
+        print(
+            f"MAVLink Error: cannot open {connection_string}; "
+            "the serial port is already in use. Close Mission Planner's "
+            "COM5 connection, or configure Mission Planner to forward "
+            "MAVLink over UDP and use udp:127.0.0.1:14550 here."
+        )
+        print(e)
+        return False
     except Exception as e:
         print(f"MAVLink Error: {e}")
         return False
+    finally:
+        if master is not None:
+            master.close()
 
 class SearchAreaApp:
     def __init__(self, root):
@@ -128,10 +239,17 @@ class SearchAreaApp:
         self.root.title("ADDC Search Grid Generator")
         self.root.geometry("450x350")
         
-        tk.Label(root, text="Telemetry Connection (COM3,57600 | tcp:127.0.0.1:5760 | udp:127.0.0.1:14550):").pack(pady=5)
-        self.conn_entry = tk.Entry(root, width=40)
-        self.conn_entry.insert(0, "tcp:127.0.0.1:5760")
-        self.conn_entry.pack()
+        tk.Label(root, text=f"Telemetry COM port (baud fixed at {TELEMETRY_BAUD}):").pack(pady=5)
+        connection_frame = tk.Frame(root)
+        connection_frame.pack()
+        self.port_combo = ttk.Combobox(
+            connection_frame, width=18, state="readonly"
+        )
+        self.port_combo.pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(
+            connection_frame, text="Refresh", command=self.refresh_ports
+        ).pack(side=tk.LEFT)
+        self.refresh_ports()
         
         self.poly_btn = tk.Button(root, text="Load Mission Planner .poly file", command=self.load_poly)
         self.poly_btn.pack(pady=10)
@@ -155,6 +273,25 @@ class SearchAreaApp:
         self.poly_lats = []
         self.poly_lons = []
         self.trees = []
+
+    def refresh_ports(self):
+        ports = sorted(
+            (port.device for port in list_ports.comports()),
+            key=lambda value: (
+                0,
+                int(value[3:]),
+            )
+            if value.upper().startswith("COM") and value[3:].isdigit()
+            else (1, value),
+        )
+        self.port_combo["values"] = ports
+        if ports:
+            if "COM5" in ports:
+                self.port_combo.set("COM5")
+            else:
+                self.port_combo.current(0)
+        else:
+            self.port_combo.set("")
         
     def load_poly(self):
         filename = filedialog.askopenfilename(filetypes=[("Polygon files", "*.poly"), ("All files", "*.*")])
@@ -187,14 +324,30 @@ class SearchAreaApp:
         
         # Calculate optimal grid
         wps = generate_grid_gps(self.poly_lats, self.poly_lons, self.trees, alt, fov)
-        conn = self.conn_entry.get()
+        port = self.port_combo.get()
+        if not port:
+            messagebox.showerror(
+                "Error",
+                "No COM port selected. Connect the telemetry radio and click Refresh.",
+            )
+            return
+        conn = f"{port},{TELEMETRY_BAUD}"
         
         # Upload
         success = upload_mission(conn, wps)
         if success:
-            messagebox.showinfo("Success", f"Successfully uploaded {len(wps)} waypoints to the drone! They should now appear in Mission Planner.")
+            messagebox.showinfo(
+                "Success",
+                f"Successfully uploaded {len(wps) + 2} mission items "
+                f"({len(wps)} grid waypoints plus takeoff and landing) "
+                "to the drone! They should now appear in Mission Planner.",
+            )
         else:
-            messagebox.showerror("Error", "Failed to upload to drone via telemetry. For Mission Planner SITL, use tcp:127.0.0.1:5760 or udp:127.0.0.1:14550.")
+            messagebox.showerror(
+                "Error",
+                f"Failed to upload to {port} at {TELEMETRY_BAUD} baud. "
+                "Ensure Mission Planner is disconnected from this COM port.",
+            )
 
 if __name__ == "__main__":
     root = tk.Tk()

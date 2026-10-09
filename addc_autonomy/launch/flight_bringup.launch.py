@@ -19,11 +19,19 @@ def generate_launch_description():
         description='Cruise and search altitude in meters'
     )
 
+    competition_mode_arg = DeclareLaunchArgument(
+        'competition_mode',
+        default_value='false',
+        description='Enable Competition Mode (Reduces ROS 2 log spam, only prints critical phases)'
+    )
+
     qr_vision_node = Node(
         package='addc_autonomy',
         executable='qr_ros',
         name='vision_control_node',
         output='screen',
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[{
             'use_sim_time': False,
             'enable_debug_window': LaunchConfiguration('enable_gui'),
@@ -35,6 +43,8 @@ def generate_launch_description():
         executable='search_node',
         name='search_node',
         output='screen',
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[{
             'use_sim_time': False,
             'search_altitude': LaunchConfiguration('search_altitude'),
@@ -77,6 +87,7 @@ def generate_launch_description():
     return LaunchDescription([
         enable_gui_arg,
         altitude_arg,
+        competition_mode_arg,
         qr_vision_node,
         search_planner_node,
         mission_control_node,

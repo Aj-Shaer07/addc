@@ -193,20 +193,24 @@ ros2 run rqt_image_view rqt_image_view
 ## 5. Physical Flight Bringup (Raspberry Pi + Pixhawk)
 
 ### Step 1: On the Ground Control Station (Laptop)
-1. Draw your flight boundary in Mission Planner and save the `.poly` file.
-2. Run the GCS script to generate the exact FOV footprint and upload the mission to the drone via Telemetry:
+1. Connect to the drone via Mission Planner on your standard COM port.
+2. Press `Ctrl + F`, click **Mavlink**, and open a **UDP Client** on `127.0.0.1:14550`.
+3. Run the GCS script to generate the exact FOV footprint and tunnel it to the drone:
    ```bash
    python3 ~/ros2_ws/src/addc/search_area_setup.py
    ```
-3. Enter your radio's COM port (e.g., `COM3,57600` for Windows or `/dev/ttyUSB0,57600` for Linux) and click Upload.
+4. Enter `udp,14550` as your connection string and click Upload. Mission Planner will instantly forward the waypoints to the drone!
 
 ### Step 2: On the Drone (Raspberry Pi SSH)
 ```bash
-# Single command launch for all flight nodes
+# High-Performance Competition Launch (Mutes high-frequency ROS 2 logs, leaves critical phases on)
 source ~/ros2_ws/install/setup.bash
-ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false
+ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false competition_mode:=true
+
+# Standard Testing Launch (Shows full verbose logs for debugging)
+ros2 launch addc_autonomy flight_bringup.launch.py enable_gui:=false competition_mode:=false
 ```
-*(The physical launch file automatically disables `use_sim_time`, activating the physical PiCamera2 module and the Canny Edge precision landing hardware routines).*
+*(The physical launch file automatically enables the Fault-Tolerant Watchdog heartbeat, dynamically pulls waypoints, and uses PyZBar via the Picamera2 module).*
 
 ---
 
