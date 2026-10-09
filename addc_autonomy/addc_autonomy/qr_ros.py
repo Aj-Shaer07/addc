@@ -87,7 +87,6 @@ class QRVisionNode(Node):
         self.decoded_code: Optional[str] = None
         self.video_writer: Optional[cv2.VideoWriter] = None
 
-        self.enable_gui = False
         if self.enable_gui:
             self.window_name = "ADDC Vision Control - Target Tracking HUD"
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -149,8 +148,14 @@ class QRVisionNode(Node):
         try:
             self.camera = Picamera2()
             config = self.camera.create_video_configuration(
-                main={"size": (960, 540), "format": "BGR888"},
-                controls={"FrameRate": 30}
+                main={
+                    "size": (1280, 720),
+                    "format": "BGR888"
+                },
+                controls={
+                    "FrameRate": 30
+                },
+                buffer_count=2
             )
             self.camera.configure(config)
             self.camera.start()
@@ -213,17 +218,10 @@ class QRVisionNode(Node):
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Pyramid Detection: Shrink image by 60% to drastically speed up finding the QR code
-        scale = 0.6
-        small_gray = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
-
-        # Single-pass point detection on the faster, smaller image
-        retval, small_points = self.qr.detect(small_gray)
-        if not retval or small_points is None or len(small_points) == 0:
+        # Single-pass point detection
+        retval, points = self.qr.detect(gray)
+        if not retval or points is None or len(points) == 0:
             return None, None, 0.0, 0.0
-
-        # Scale the bounding box points back up to the HD frame for decoding!
-        points = small_points / scale
 
         # Calculate True Normalized Centroid Error (-1.0 to 1.0)
         pts_reshaped = points.reshape(-1, 2)

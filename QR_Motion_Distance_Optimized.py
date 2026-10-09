@@ -61,26 +61,20 @@ class OptimizedMotionQRScanner:
         This drastically reduces CPU load on RPi by avoiding multiple full-frame searches.
         Returns (digits, points, offset_x, offset_y)
         """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
         
-        # Pyramid Detection: Shrink image by 70% to drastically speed up finding the QR code
-        scale = 0.6
-        small_gray = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+        # 1. Detect QR code location once
+        retval, points = self.qr.detect(gray)
         
-        # 1. Detect QR code location once on the faster, smaller image
-        retval, small_points = self.qr.detect(small_gray)
-        
-        if not retval or small_points is None:
+        if not retval or points is None or len(points) == 0:
             return None, None, 0, 0
-            
-        # 2. Scale the bounding box points back up to the 1280x720 HD frame for decoding!
-        points = small_points / scale
 
         # We found points! Now try decoding using the known location.
         # This is extremely fast compared to full detection.
 
         # Attempt 1: Direct Grayscale
         data, _ = self.qr.decode(gray, points)
+        if data: print(f"DEBUG DECODE (Direct): {data}")
         extracted = self._extract_digits(data)
         if extracted:
             return extracted, points, 0, 0
@@ -88,6 +82,7 @@ class OptimizedMotionQRScanner:
         # Attempt 2: CLAHE Enhanced
         enhanced = self.clahe.apply(gray)
         data, _ = self.qr.decode(enhanced, points)
+        if data: print(f"DEBUG DECODE (CLAHE): {data}")
         extracted = self._extract_digits(data)
         if extracted:
             return extracted, points, 0, 0
