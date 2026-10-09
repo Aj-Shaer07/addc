@@ -5,13 +5,13 @@ import time
 import cv2
 import numpy as np
 from picamera2 import Picamera2
+from pyzbar.pyzbar import decode as pyzbar_decode
 
 
 
 class OptimizedMotionQRScanner:
     def __init__(self, record_video=False, output_filename="qr_scan_output.mp4"):
         self.camera = Picamera2()
-        self.qr = cv2.QRCodeDetector()
         
         # CLAHE setup from QR_Final.py (excellent contrast for distance & low lighting)
         self.clahe = cv2.createCLAHE(
@@ -61,53 +61,38 @@ class OptimizedMotionQRScanner:
         This drastically reduces CPU load on RPi by avoiding multiple full-frame searches.
         Returns (digits, points, offset_x, offset_y)
         """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # 1. Detect QR code location once
-        retval, points = self.qr.detect(gray)
+        # PyZBar instantly finds and decodes QR codes from any angle/density
+        decoded_objects = pyzbar_decode(gray)
+
+        # Fallback 1: Laptop Screen Glare Darkening
+        if not decoded_objects:
+            darkened = cv2.LUT(gray, self.gamma_lut)
+            decoded_objects = pyzbar_decode(darkened)
+            
+        # Fallback 2: CLAHE Contrast Boost
+        if not decoded_objects:
+            enhanced = self.clahe.apply(gray)
+            decoded_objects = pyzbar_decode(enhanced)
         
-        if not retval or points is None or len(points) == 0:
+        if not decoded_objects:
             return None, None, 0, 0
-
-        # We found points! Now try decoding using the known location.
-        # This is extremely fast compared to full detection.
-
-        # Attempt 1: Direct Grayscale
-        data, _ = self.qr.decode(gray, points)
-        if data: print(f"DEBUG DECODE (Direct): {data}")
+            
+        # Grab the first detected QR code
+        obj = decoded_objects[0]
+        data = obj.data.decode("utf-8")
+        
+        # Convert PyZBar polygon points to OpenCV format
+        pts = np.array([point for point in obj.polygon], dtype=np.int32)
+        points = pts.reshape(1, -1, 2).astype(np.float32)
+        
+        print(f"DEBUG DECODE: {data}")
+        
         extracted = self._extract_digits(data)
         if extracted:
             return extracted, points, 0, 0
-
-        # Attempt 2: CLAHE Enhanced
-        enhanced = self.clahe.apply(gray)
-        data, _ = self.qr.decode(enhanced, points)
-        if data: print(f"DEBUG DECODE (CLAHE): {data}")
-        extracted = self._extract_digits(data)
-        if extracted:
-            return extracted, points, 0, 0
-
-        # Attempt 3: Otsu Thresholding
-        _, binary = cv2.threshold(
-            enhanced,
-            0,
-            255,
-            cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        data, _ = self.qr.decode(binary, points)
-        extracted = self._extract_digits(data)
-        if extracted:
-            return extracted, points, 0, 0
-
-        # Attempt 4: Pre-computed Gamma Darkening
-        darkened = cv2.LUT(gray, self.gamma_lut)
-        data, _ = self.qr.decode(darkened, points)
-        extracted = self._extract_digits(data)
-        if extracted:
-            return extracted, points, 0, 0
-
-        # Found a QR code but couldn't decode a valid 2-digit code
-        # Still return points so the green box is drawn!
+            
         return None, points, 0, 0
 
     def run(self):
